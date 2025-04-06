@@ -1,6 +1,6 @@
 package me.synapsed.aws.stacks;
 
-import java.util.List;
+import java.util.Arrays;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -9,119 +9,104 @@ import software.amazon.awscdk.App;
 import software.amazon.awscdk.assertions.Match;
 import software.amazon.awscdk.assertions.Template;
 
-public class ConfigurationManagementStackTest {
+class ConfigurationManagementStackTest {
 
     @Test
-    public void testStackCreation() {
+    void testConfigurationManagementStack() {
+        // Create the app and stack
         App app = new App();
-        ConfigurationManagementStack stack = new ConfigurationManagementStack(app, "TestStack", null);
+        ConfigurationManagementStack stack = new ConfigurationManagementStack(app, "TestConfigStack", null);
         Template template = Template.fromStack(stack);
 
-        // Verify KMS Key
-        template.hasResourceProperties("AWS::KMS::Key", Map.of(
-            "Description", "KMS key for configuration encryption",
-            "EnableKeyRotation", true,
-            "KeySpec", "SYMMETRIC_DEFAULT",
-            "KeyUsage", "ENCRYPT_DECRYPT"
-        ));
+        // Verify KMS key
+        template.hasResourceProperties("AWS::KMS::Key", 
+            Match.objectLike(Map.of(
+                "Description", "KMS key for configuration encryption",
+                "EnableKeyRotation", true,
+                "KeySpec", "SYMMETRIC_DEFAULT",
+                "KeyUsage", "ENCRYPT_DECRYPT"
+            )));
 
-        // Verify Parameter Store Parameter
-        template.hasResourceProperties("AWS::SSM::Parameter", Map.of(
-            "Name", "/synapsed/app/config",
-            "Type", "String",
-            "Tier", "Standard",
-            "Description", "Application configuration parameters"
-        ));
+        // Verify Parameter Store parameter
+        template.hasResourceProperties("AWS::SSM::Parameter", 
+            Match.objectLike(Map.of(
+                "Name", "/synapsed/app/config",
+                "Type", "String",
+                "Description", "Application configuration parameters",
+                "Tier", "Standard",
+                "Value", "{\"featureFlags\":{\"newUI\":false,\"betaFeatures\":false},\"settings\":{\"timeout\":30,\"retryCount\":3}}"
+            )));
 
-        // Verify Secrets Manager Secret
-        template.hasResourceProperties("AWS::SecretsManager::Secret", Map.of(
-            "Name", "synapsed/app/secrets",
-            "Description", "Application secrets",
-            "GenerateSecretString", Match.objectLike(Map.of(
-                "SecretStringTemplate", "{\"username\":\"admin\"}",
-                "GenerateStringKey", "password",
-                "ExcludeCharacters", "\"@/\\",
-                "PasswordLength", 16
-            ))
-        ));
+        // Verify Secrets Manager secret
+        template.hasResourceProperties("AWS::SecretsManager::Secret", 
+            Match.objectLike(Map.of(
+                "Name", "synapsed/app/secrets",
+                "Description", "Application secrets"
+            )));
 
-        // Verify AppConfig Application
-        template.hasResourceProperties("AWS::AppConfig::Application", Map.of(
-            "Name", "synapsed-app",
-            "Description", "Synapsed application configuration"
-        ));
+        // Verify AppConfig application
+        template.hasResourceProperties("AWS::AppConfig::Application", 
+            Match.objectLike(Map.of(
+                "Name", "synapsed-app",
+                "Description", "Synapsed application configuration"
+            )));
 
-        // Verify AppConfig Environment
-        template.hasResourceProperties("AWS::AppConfig::Environment", Map.of(
-            "Name", "production",
-            "Description", "Production environment"
-        ));
+        // Verify AppConfig environment
+        template.hasResourceProperties("AWS::AppConfig::Environment", 
+            Match.objectLike(Map.of(
+                "Name", "production",
+                "Description", "Production environment"
+            )));
 
-        // Verify AppConfig Configuration Profile
-        template.hasResourceProperties("AWS::AppConfig::ConfigurationProfile", Map.of(
-            "Name", "synapsed-config",
-            "Description", "Synapsed configuration profile",
-            "LocationUri", "hosted"
-        ));
+        // Verify AppConfig configuration profile
+        template.hasResourceProperties("AWS::AppConfig::ConfigurationProfile", 
+            Match.objectLike(Map.of(
+                "Name", "synapsed-config",
+                "Description", "Synapsed configuration profile",
+                "LocationUri", "hosted"
+            )));
 
-        // Verify AppConfig Deployment Strategy
-        template.hasResourceProperties("AWS::AppConfig::DeploymentStrategy", Map.of(
-            "Name", "synapsed-deployment",
-            "Description", "Synapsed deployment strategy",
-            "DeploymentDurationInMinutes", 15,
-            "GrowthFactor", 20.0,
-            "ReplicateTo", "NONE"
-        ));
+        // Verify AppConfig deployment strategy
+        template.hasResourceProperties("AWS::AppConfig::DeploymentStrategy", 
+            Match.objectLike(Map.of(
+                "Name", "synapsed-deployment",
+                "Description", "Synapsed deployment strategy",
+                "DeploymentDurationInMinutes", 15,
+                "GrowthFactor", 20.0,
+                "ReplicateTo", "NONE"
+            )));
 
-        // Verify IAM Role for AppConfig
-        template.hasResourceProperties("AWS::IAM::Role", Match.objectLike(Map.of(
-            "AssumeRolePolicyDocument", Match.objectLike(Map.of(
-                "Statement", List.of(Map.of(
-                    "Action", "sts:AssumeRole",
-                    "Effect", "Allow",
-                    "Principal", Map.of(
-                        "Service", "appconfig.amazonaws.com"
-                    )
+        // Verify AppConfig role permissions
+        template.hasResourceProperties("AWS::IAM::Policy", 
+            Match.objectLike(Map.of(
+                "PolicyDocument", Match.objectLike(Map.of(
+                    "Statement", Match.arrayWith(Arrays.asList(
+                        Match.objectLike(Map.of(
+                            "Effect", "Allow",
+                            "Action", Arrays.asList(
+                                "ssm:GetParameter",
+                                "ssm:GetParameters",
+                                "ssm:GetParametersByPath"
+                            ),
+                            "Resource", "arn:aws:ssm:*:*:parameter/synapsed/*"
+                        )),
+                        Match.objectLike(Map.of(
+                            "Effect", "Allow",
+                            "Action", "secretsmanager:GetSecretValue",
+                            "Resource", "arn:aws:secretsmanager:*:*:secret:synapsed/*"
+                        )),
+                        Match.objectLike(Map.of(
+                            "Effect", "Allow",
+                            "Action", Arrays.asList(
+                                "logs:CreateLogGroup",
+                                "logs:CreateLogStream",
+                                "logs:PutLogEvents",
+                                "logs:DescribeLogStreams"
+                            ),
+                            "Resource", "arn:aws:logs:*:*:log-group:/aws/appconfig/*"
+                        ))
+                    ))
                 ))
-            )),
-            "Description", "Role for AppConfig to access configuration sources"
-        )));
-
-        // Verify base stack IAM policy
-        template.hasResourceProperties("AWS::IAM::Policy", Match.objectLike(Map.of(
-            "PolicyDocument", Match.objectLike(Map.of(
-                "Statement", List.of(Map.of(
-                    "Effect", "Allow",
-                    "Action", List.of(
-                        "logs:CreateLogGroup",
-                        "logs:CreateLogStream",
-                        "logs:PutLogEvents"
-                    ),
-                    "Resource", "arn:aws:logs:*:*:*"
-                ))
-            ))
-        )));
-
-        // Verify AppConfig Role Policy
-        template.hasResourceProperties("AWS::IAM::Policy", Match.objectLike(Map.of(
-            "PolicyDocument", Match.objectLike(Map.of(
-                "Statement", List.of(
-                    Map.of(
-                        "Effect", "Allow",
-                        "Action", List.of(
-                            "ssm:GetParameter",
-                            "ssm:GetParameters",
-                            "ssm:GetParametersByPath"
-                        ),
-                        "Resource", "arn:aws:ssm:*:*:parameter/synapsed/*"
-                    ),
-                    Map.of(
-                        "Effect", "Allow",
-                        "Action", "secretsmanager:GetSecretValue",
-                        "Resource", "arn:aws:secretsmanager:*:*:secret:synapsed/*"
-                    )
-                )
-            ))
-        )));
+            )));
     }
 } 

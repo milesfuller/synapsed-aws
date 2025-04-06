@@ -144,6 +144,20 @@ public class ConfigurationManagementStack extends SynapsedStack {
             ))
             .build());
 
+        // Add permissions to write to CloudWatch Logs
+        role.addToPolicy(PolicyStatement.Builder.create()
+            .effect(Effect.ALLOW)
+            .actions(Arrays.asList(
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents",
+                "logs:DescribeLogStreams"
+            ))
+            .resources(Arrays.asList(
+                "arn:aws:logs:*:*:log-group:/aws/appconfig/*"
+            ))
+            .build());
+
         return role;
     }
 } 
