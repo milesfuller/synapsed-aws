@@ -21,7 +21,7 @@
         <spring.boot.version>3.2.3</spring.boot.version>
         <junit.version>5.10.2</junit.version>
         <mockito.version>5.10.0</mockito.version>
-        <constructs.version>[10.0.0,11.0.0)</constructs.version>
+        <constructs.version>10.3.0</constructs.version>
         <lombok.version>1.18.30</lombok.version>
     </properties>
 
@@ -102,6 +102,28 @@
             <artifactId>mockito-junit-jupiter</artifactId>
             <version>${mockito.version}</version>
             <scope>test</scope>
+        </dependency>
+
+        <!-- AWS Lambda Dependencies -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-lambda-java-core</artifactId>
+            <version>1.2.3</version>
+        </dependency>
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-lambda-java-events</artifactId>
+            <version>3.11.4</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>firehose</artifactId>
+            <version>2.25.12</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.16.1</version>
         </dependency>
     </dependencies>
 

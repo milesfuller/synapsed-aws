@@ -44,3 +44,4 @@ Thumbs.db
 test-output/
 reports/
 coverage/ 
+synapsed-aws.code-workspace
