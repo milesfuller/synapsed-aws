@@ -79,6 +79,11 @@
             <artifactId>sns</artifactId>
             <version>${aws.java.sdk.version}</version>
         </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${aws.java.sdk.version}</version>
+        </dependency>
 
         <!-- Spring Boot Dependencies (Optional) -->
         <dependency>
