@@ -11,8 +11,6 @@ import software.amazon.awscdk.services.config.CfnRemediationConfiguration;
 import software.amazon.awscdk.services.config.CfnRemediationConfigurationProps;
 import software.amazon.awscdk.services.cloudtrail.CfnTrail;
 import software.amazon.awscdk.services.cloudtrail.CfnTrailProps;
-import software.amazon.awscdk.services.ec2.CfnFlowLog;
-import software.amazon.awscdk.services.ec2.CfnFlowLogProps;
 import software.amazon.awscdk.services.iam.Role;
 import software.amazon.awscdk.services.iam.RoleProps;
 import software.amazon.awscdk.services.iam.ServicePrincipal;
@@ -40,7 +38,6 @@ import java.util.Map;
 public class ComplianceStack extends Stack {
     private final CfnConfigRule[] complianceRules;
     private final CfnTrail auditTrail;
-    private final CfnFlowLog vpcFlowLogs;
     private final Role complianceRole;
     private final Function reportGenerator;
     private final Topic complianceNotificationsTopic;
@@ -68,7 +65,6 @@ public class ComplianceStack extends Stack {
             .actions(Arrays.asList(
                 "config:*",
                 "cloudtrail:*",
-                "ec2:*",
                 "logs:CreateLogGroup",
                 "logs:CreateLogStream",
                 "logs:PutLogEvents",
@@ -79,14 +75,14 @@ public class ComplianceStack extends Stack {
             .resources(Arrays.asList("*"))
             .build());
 
-        // Create S3 bucket for compliance data
+        // Create S3 bucket for compliance data with optimized lifecycle policy
         this.complianceBucket = new Bucket(this, "ComplianceBucket",
             BucketProps.builder()
                 .versioned(true)
                 .encryption(BucketEncryption.S3_MANAGED)
                 .lifecycleRules(Arrays.asList(
                     LifecycleRule.builder()
-                        .expiration(Duration.days(2555)) // 7 years
+                        .expiration(Duration.days(365)) // Reduce retention to 1 year to save costs
                         .build()
                 ))
                 .build());
@@ -94,45 +90,19 @@ public class ComplianceStack extends Stack {
         // Create CloudTrail for audit logging
         this.auditTrail = new CfnTrail(this, "ComplianceAuditTrail",
             CfnTrailProps.builder()
-                .enableLogFileValidation(true)
+                .isLogging(true)
+                .enableLogFileValidation(false) // Disable log file validation to reduce costs
                 .includeGlobalServiceEvents(true)
-                .isMultiRegionTrail(true)
+                .isMultiRegionTrail(false) // Use single region to reduce costs
                 .s3BucketName(complianceBucket.getBucketName())
                 .build());
 
-        // Create VPC Flow Logs
-        this.vpcFlowLogs = new CfnFlowLog(this, "VPCFlowLogs",
-            CfnFlowLogProps.builder()
-                .resourceType("VPC")
-                .maxAggregationInterval(60)
-                .trafficType("ALL")
-                .logDestinationType("s3")
-                .logDestination(complianceBucket.getBucketArn())
-                .build());
-
-        // Create compliance rules
+        // Create compliance rules - limit to essential rules only
         this.complianceRules = new CfnConfigRule[] {
-            // Encryption rule
-            new CfnConfigRule(this, "EncryptionRule",
-                CfnConfigRuleProps.builder()
-                    .source(CfnConfigRule.SourceProperty.builder()
-                        .owner("AWS")
-                        .sourceIdentifier("ENCRYPTED_VOLUMES")
-                        .build())
-                    .build()),
-            
-            // IAM password policy rule
-            new CfnConfigRule(this, "IAMPasswordPolicyRule",
-                CfnConfigRuleProps.builder()
-                    .source(CfnConfigRule.SourceProperty.builder()
-                        .owner("AWS")
-                        .sourceIdentifier("IAM_PASSWORD_POLICY")
-                        .build())
-                    .build()),
-            
-            // S3 bucket public access rule
+            // S3 bucket public access rule (most critical for security)
             new CfnConfigRule(this, "S3PublicAccessRule",
                 CfnConfigRuleProps.builder()
+                    .configRuleName("s3-public-read-prohibited")
                     .source(CfnConfigRule.SourceProperty.builder()
                         .owner("AWS")
                         .sourceIdentifier("S3_BUCKET_PUBLIC_READ_PROHIBITED")
@@ -140,9 +110,9 @@ public class ComplianceStack extends Stack {
                     .build())
         };
 
-        // Create remediation configurations
+        // Create remediation configurations only for critical rules
         for (CfnConfigRule rule : complianceRules) {
-            new CfnRemediationConfiguration(this, "Remediation-" + rule.getLogicalId(),
+            new CfnRemediationConfiguration(this, "Remediation-" + rule.getConfigRuleName(),
                 CfnRemediationConfigurationProps.builder()
                     .configRuleName(rule.getConfigRuleName())
                     .targetId("AWS-EnableEncryption")
@@ -153,13 +123,15 @@ public class ComplianceStack extends Stack {
         // Create SNS Topic for compliance notifications
         this.complianceNotificationsTopic = new Topic(this, "ComplianceNotificationsTopic");
 
-        // Create Lambda function for report generation
+        // Create Lambda function for report generation with minimal resources
         this.reportGenerator = new Function(this, "ComplianceReportGenerator",
             FunctionProps.builder()
                 .runtime(Runtime.JAVA_21)
                 .handler("me.synapsed.aws.lambda.ComplianceReportGenerator::handleRequest")
                 .code(Code.fromAsset("src/main/java/me/synapsed/aws/lambda"))
                 .role(complianceRole)
+                .memorySize(128) // Reduce memory to minimum required
+                .timeout(Duration.seconds(30)) // Reduce timeout to minimum required
                 .environment(Map.of(
                     "LOG_GROUP_NAME", loggingStack.getAuditLogs().getLogGroupName(),
                     "NOTIFICATION_TOPIC_ARN", complianceNotificationsTopic.getTopicArn(),

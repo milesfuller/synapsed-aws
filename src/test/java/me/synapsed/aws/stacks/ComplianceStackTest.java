@@ -1,16 +1,13 @@
 package me.synapsed.aws.stacks;
 
-import org.junit.jupiter.api.Test;
-import software.amazon.awscdk.App;
-import software.amazon.awscdk.assertions.Template;
-import software.amazon.awscdk.assertions.Match;
-import software.amazon.awscdk.services.iam.Role;
-import software.amazon.awscdk.services.lambda.Function;
-import software.amazon.awscdk.services.s3.Bucket;
-import software.amazon.awscdk.services.sns.Topic;
-
-import java.util.Map;
 import java.util.Arrays;
+import java.util.Map;
+
+import org.junit.jupiter.api.Test;
+
+import software.amazon.awscdk.App;
+import software.amazon.awscdk.assertions.Match;
+import software.amazon.awscdk.assertions.Template;
 
 public class ComplianceStackTest {
     @Test
@@ -26,32 +23,38 @@ public class ComplianceStackTest {
 
         // Verify CloudTrail
         template.hasResourceProperties("AWS::CloudTrail::Trail", Map.of(
-            "EnableLogFileValidation", true,
+            "IsLogging", true,
+            "EnableLogFileValidation", false,
             "IncludeGlobalServiceEvents", true,
-            "IsMultiRegionTrail", true
+            "IsMultiRegionTrail", false
         ));
 
-        // Verify VPC Flow Logs
-        template.hasResourceProperties("AWS::Logs::FlowLog", Map.of(
-            "ResourceType", "VPC",
-            "TrafficType", "ALL",
-            "LogDestinationType", "s3"
-        ));
-
-        // Verify Config Rules
-        template.hasResourceProperties("AWS::Config::ConfigRule", Map.of(
+        // Verify Config Rules - only S3 public access rule
+        template.hasResourceProperties("AWS::Config::ConfigRule", Match.objectLike(Map.of(
+            "ConfigRuleName", "s3-public-read-prohibited",
             "Source", Match.objectLike(Map.of(
                 "Owner", "AWS",
-                "SourceIdentifier", "ENCRYPTED_VOLUMES"
+                "SourceIdentifier", "S3_BUCKET_PUBLIC_READ_PROHIBITED"
             ))
-        ));
+        )));
 
         // Verify IAM Role
         template.hasResourceProperties("AWS::IAM::Role", Map.of(
-            "Description", "Role for compliance services"
+            "Description", "Role for compliance services",
+            "AssumeRolePolicyDocument", Match.objectLike(Map.of(
+                "Statement", Arrays.asList(
+                    Match.objectLike(Map.of(
+                        "Action", "sts:AssumeRole",
+                        "Effect", "Allow",
+                        "Principal", Map.of(
+                            "Service", "config.amazonaws.com"
+                        )
+                    ))
+                )
+            ))
         ));
 
-        // Verify S3 Bucket
+        // Verify S3 Bucket with 1-year retention
         template.hasResourceProperties("AWS::S3::Bucket", Map.of(
             "VersioningConfiguration", Match.objectLike(Map.of(
                 "Status", "Enabled"
@@ -67,13 +70,12 @@ public class ComplianceStackTest {
             ))
         ));
 
-        // Verify SNS Topic
-        template.hasResourceProperties("AWS::SNS::Topic", Map.of());
-
-        // Verify Lambda Function
+        // Verify Lambda Function with minimal resources
         template.hasResourceProperties("AWS::Lambda::Function", Map.of(
             "Runtime", "java21",
-            "Handler", "me.synapsed.aws.lambda.ComplianceReportGenerator::handleRequest"
+            "Handler", "me.synapsed.aws.lambda.ComplianceReportGenerator::handleRequest",
+            "MemorySize", 128,
+            "Timeout", 30
         ));
     }
 } 
