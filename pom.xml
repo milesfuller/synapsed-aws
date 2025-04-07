@@ -16,14 +16,13 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
-        <cdk.version>2.129.0</cdk.version>
+        <cdk.version>2.130.0</cdk.version>
         <aws.java.sdk.version>2.24.12</aws.java.sdk.version>
         <spring.boot.version>3.2.3</spring.boot.version>
         <junit.version>5.10.2</junit.version>
         <mockito.version>5.10.0</mockito.version>
         <constructs.version>10.3.0</constructs.version>
         <lombok.version>1.18.30</lombok.version>
-        <aws.cdk.version>2.124.0</aws.cdk.version>
         <aws.lambda.java.version>1.2.3</aws.lambda.java.version>
         <aws.lambda.java.events.version>3.11.4</aws.lambda.java.events.version>
     </properties>
@@ -38,7 +37,7 @@
         <dependency>
             <groupId>software.constructs</groupId>
             <artifactId>constructs</artifactId>
-            <version>${constructs.version}</version>
+            <version>10.3.0</version>
         </dependency>
 
         <!-- AWS SDK Dependencies -->
@@ -105,6 +104,11 @@
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>firehose</artifactId>
+            <version>${aws.java.sdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
             <version>${aws.java.sdk.version}</version>
         </dependency>
 
@@ -225,4 +229,12 @@
             </plugin>
         </plugins>
     </build>
+
+    <repositories>
+        <repository>
+            <id>central</id>
+            <name>Maven Central Repository</name>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
+    </repositories>
 </project> 
