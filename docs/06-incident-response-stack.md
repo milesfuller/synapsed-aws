@@ -9,7 +9,7 @@ The Incident Response Stack provides automated incident detection, response, and
 - **Purpose**: Detect security and operational incidents
 - **Implementation**:
   - CloudWatch Alarms
-  - EventBridge rules
+  - EventBridge rules for Security Hub and GuardDuty findings
   - Custom detection rules
   - Anomaly detection
 
@@ -44,10 +44,10 @@ The Incident Response Stack provides automated incident detection, response, and
 - Compliance Stack
 
 ## Outputs
-- Incident Detection Rule ARNs
-- Response Lambda ARNs
-- Step Function ARNs
-- Recovery Procedure ARNs
+- Incident Detection Rule ARNs (SecurityHubFindingsRule, GuardDutyFindingsRule)
+- Response Lambda ARNs (IncidentDetector, IncidentResponder)
+- Step Function ARN (IncidentResponseWorkflow)
+- SNS Topic ARN (IncidentNotificationsTopic)
 
 ## Security Considerations
 - Secure incident data handling

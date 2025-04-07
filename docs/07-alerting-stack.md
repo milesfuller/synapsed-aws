@@ -9,9 +9,10 @@ The Alerting Stack provides comprehensive alerting and notification capabilities
 - **Purpose**: Manage and route alerts
 - **Implementation**:
   - SNS topics for alert distribution
-  - Alert routing rules
+  - Scheduled alert processing (every 5 minutes)
   - Alert aggregation
   - Alert deduplication
+  - Alert storage in S3 for auditing
 
 ### Notification Delivery
 - **Purpose**: Deliver alerts to stakeholders
@@ -24,10 +25,10 @@ The Alerting Stack provides comprehensive alerting and notification capabilities
 ### Escalation Management
 - **Purpose**: Handle alert escalation
 - **Implementation**:
-  - Escalation policies
-  - On-call schedules
-  - Escalation workflows
-  - Notification templates
+  - Escalation policies based on severity and time thresholds
+  - Automated escalation workflows
+  - Notification templates with original alert context
+  - Escalation tracking
 
 ### Alert Analytics
 - **Purpose**: Analyze alert patterns
@@ -44,10 +45,11 @@ The Alerting Stack provides comprehensive alerting and notification capabilities
 - Incident Response Stack
 
 ## Outputs
-- SNS Topic ARNs
-- Lambda Function ARNs
-- Step Function ARNs
-- Dashboard ARNs
+- SNS Topic ARNs (critical-alerts, warning-alerts, info-alerts, alert-escalations)
+- Lambda Function ARNs (AlertRouter, NotificationSender, EscalationManager)
+- Step Function ARN (AlertWorkflow)
+- Dashboard ARN (Synapsed-Alerting)
+- S3 Bucket ARN (synapsed-alerts)
 
 ## Security Considerations
 - Secure alert data handling
