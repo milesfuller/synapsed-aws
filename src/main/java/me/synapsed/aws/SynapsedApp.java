@@ -7,6 +7,7 @@ import me.synapsed.aws.stacks.LoggingStack;
 import me.synapsed.aws.stacks.RelayStack;
 import me.synapsed.aws.stacks.SecurityMonitoringStack;
 import me.synapsed.aws.stacks.SecurityStack;
+import me.synapsed.aws.stacks.SubscriptionStack;
 import me.synapsed.aws.stacks.WebAppStack;
 import software.amazon.awscdk.App;
 import software.amazon.awscdk.Environment;
@@ -61,6 +62,14 @@ public class SynapsedApp {
 
         // Create the authentication stack
         new AuthenticationStack(app, "AuthenticationStack", StackProps.builder()
+            .env(Environment.builder()
+                .account(System.getenv("CDK_DEFAULT_ACCOUNT"))
+                .region(System.getenv("CDK_DEFAULT_REGION"))
+                .build())
+            .build(), securityStack, loggingStack);
+
+        // Create the subscription stack
+        new SubscriptionStack(app, "SubscriptionStack", StackProps.builder()
             .env(Environment.builder()
                 .account(System.getenv("CDK_DEFAULT_ACCOUNT"))
                 .region(System.getenv("CDK_DEFAULT_REGION"))
