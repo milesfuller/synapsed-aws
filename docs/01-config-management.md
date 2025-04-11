@@ -1,62 +1,83 @@
 # Configuration Management Stack
 
 ## Overview
-The Configuration Management stack provides centralized configuration storage and management for the Synapsed platform. It establishes the foundational services needed for secure parameter and secret management across the organization.
+
+The Configuration Management Stack provides a centralized configuration system for the Synapse-D platform. It uses AWS Systems Manager Parameter Store and AWS Secrets Manager to securely store and manage configuration parameters and secrets.
 
 ## Components
 
 ### Parameter Store
-- **Purpose**: Central configuration storage for application parameters
-- **Implementation**:
-  - Hierarchical parameter structure (`/synapsed/{environment}/{service}/{parameter}`)
-  - Standardized naming conventions
-  - Versioning support for parameter values
-  - Parameter policies for access control
+
+The Parameter Store is used to store non-sensitive configuration parameters such as:
+- Environment variables
+- Feature flags
+- Service endpoints
+- Application settings
 
 ### Secrets Manager
-- **Purpose**: Secure storage and rotation of sensitive information
-- **Implementation**:
-  - Secret naming convention (`synapsed-{environment}-{service}-{secret-name}`)
-  - Automatic rotation policies (90-day rotation by default)
-  - Cross-account access policies
-  - Secret replication for high availability
 
-### AppConfig
-- **Purpose**: Feature flags and dynamic configuration
-- **Implementation**:
-  - Application profiles for different environments
-  - Feature flag definitions
-  - Configuration validators
-  - Deployment strategies
+The Secrets Manager is used to store sensitive information such as:
+- API keys
+- Database credentials
+- Stripe API keys
+- Webhook secrets
 
-### KMS
-- **Purpose**: Encryption key management
-- **Implementation**:
-  - Customer-managed keys for each environment
-  - Key rotation policies
-  - Cross-account key sharing
-  - Key usage policies
+### IAM Roles and Policies
 
-### Environment Configuration
-- **Purpose**: Type-safe environment variable handling
-- **Implementation**:
-  - Environment-specific configuration classes
-  - Validation rules for configuration values
-  - Default values for optional parameters
-  - Configuration loading utilities
+The stack creates IAM roles and policies to control access to the configuration resources:
+- Read-only access for application components
+- Write access for administrative functions
+- Cross-account access policies
 
-## Dependencies
-- None (foundational stack)
+## Usage
 
-## Outputs
-- Parameter Store ARNs
-- Secrets Manager ARNs
-- AppConfig Application IDs
-- KMS Key IDs
-- Environment configuration classes
+### Storing Configuration
 
-## Security Considerations
-- Encryption at rest for all stored values
-- Least privilege access policies
-- Audit logging for all configuration changes
-- Secure parameter policies for sensitive data 
+```java
+// Store a parameter
+ssmClient.putParameter(PutParameterRequest.builder()
+    .name("/synapsed/prod/api/endpoint")
+    .value("https://api.synapsed.app")
+    .type(ParameterType.STRING)
+    .build());
+
+// Store a secret
+secretsManagerClient.createSecret(CreateSecretRequest.builder()
+    .name("/synapsed/prod/stripe/api-key")
+    .secretString("sk_test_...")
+    .build());
+```
+
+### Retrieving Configuration
+
+```java
+// Get a parameter
+String endpoint = ssmClient.getParameter(GetParameterRequest.builder()
+    .name("/synapsed/prod/api/endpoint")
+    .withDecryption(false)
+    .build())
+    .parameter()
+    .value();
+
+// Get a secret
+String apiKey = secretsManagerClient.getSecretValue(GetSecretValueRequest.builder()
+    .secretId("/synapsed/prod/stripe/api-key")
+    .build())
+    .secretString();
+```
+
+## Integration with Other Stacks
+
+The Configuration Management Stack is referenced by other stacks to provide configuration values:
+- Security Stack: For security settings and API keys
+- Relay Stack: For WebRTC configuration and subscription settings
+- Subscription Stack: For Stripe API keys and webhook secrets
+- Authentication Stack: For authentication settings and secrets
+
+## Best Practices
+
+1. Use hierarchical parameter names (e.g., `/synapsed/prod/service/parameter`)
+2. Encrypt sensitive values using AWS KMS
+3. Use IAM policies to restrict access to sensitive parameters
+4. Implement versioning for configuration changes
+5. Use tags to organize and track configuration resources 

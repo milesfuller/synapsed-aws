@@ -102,15 +102,23 @@ class RelayServerTest {
         request.setHeaders(headers);
         request.setBody("{\"type\":\"offer\",\"peerId\":\"peer-123\"}");
 
-        Map<String, AttributeValue> item = new HashMap<>();
-        item.put("did", AttributeValue.builder().s("test-did").build());
-        item.put("proof", AttributeValue.builder().s("valid-proof").build());
-        item.put("expiresAt", AttributeValue.builder().s(String.valueOf(System.currentTimeMillis() + 3600000)).build());
+        // Mock subscription proof lookup
+        Map<String, AttributeValue> proofItem = new HashMap<>();
+        proofItem.put("did", AttributeValue.builder().s("test-did").build());
+        proofItem.put("proof", AttributeValue.builder().s("valid-proof").build());
+        proofItem.put("expiresAt", AttributeValue.builder().s(String.valueOf(System.currentTimeMillis() + 3600000)).build());
+
+        // Mock peer connection lookup
+        Map<String, AttributeValue> peerItem = new HashMap<>();
+        peerItem.put("peerId", AttributeValue.builder().s("peer-123").build());
+        peerItem.put("endpoint", AttributeValue.builder().s("wss://example.com").build());
+        peerItem.put("connectionId", AttributeValue.builder().s("conn-123").build());
 
         when(dynamoDbClient.getItem(any(GetItemRequest.class)))
-            .thenReturn(GetItemResponse.builder()
-                .item(item)
-                .build());
+            .thenReturn(
+                GetItemResponse.builder().item(proofItem).build(),  // First call for subscription proof
+                GetItemResponse.builder().item(peerItem).build()    // Second call for peer connection
+            );
 
         APIGatewayProxyResponseEvent response = handler.handleRequest(request, context);
 

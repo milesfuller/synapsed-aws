@@ -14,6 +14,10 @@ import software.amazon.awscdk.services.apigateway.LambdaIntegration;
 import software.amazon.awscdk.services.apigateway.MethodOptions;
 import software.amazon.awscdk.services.apigateway.MethodResponse;
 import software.amazon.awscdk.services.apigateway.RestApi;
+import software.amazon.awscdk.services.dynamodb.Attribute;
+import software.amazon.awscdk.services.dynamodb.AttributeType;
+import software.amazon.awscdk.services.dynamodb.BillingMode;
+import software.amazon.awscdk.services.dynamodb.Table;
 import software.amazon.awscdk.services.ec2.Peer;
 import software.amazon.awscdk.services.ec2.Port;
 import software.amazon.awscdk.services.ec2.SecurityGroup;
@@ -40,6 +44,7 @@ import software.constructs.Construct;
 public class RelayStack extends Stack {
     private final Function relayFunction;
     private final RestApi relayApi;
+    private final Table peerConnectionsTable;
     private final Role relayRole;
     private final LogGroup relayLogGroup;
 
@@ -102,6 +107,17 @@ public class RelayStack extends Stack {
                 .removalPolicy(software.amazon.awscdk.RemovalPolicy.DESTROY)
                 .build());
 
+        // Create DynamoDB table for peer connections
+        this.peerConnectionsTable = Table.Builder.create(this, "PeerConnectionsTable")
+            .tableName("synapsed-peer-connections")
+            .partitionKey(Attribute.builder()
+                .name("peerId")
+                .type(AttributeType.STRING)
+                .build())
+            .billingMode(BillingMode.PAY_PER_REQUEST)
+            .removalPolicy(software.amazon.awscdk.RemovalPolicy.DESTROY)
+            .build();
+
         // Create an IAM role for the relay function
         this.relayRole = new Role(this, "RelayRole",
             RoleProps.builder()
@@ -116,9 +132,15 @@ public class RelayStack extends Stack {
                 "logs:CreateLogGroup",
                 "logs:CreateLogStream",
                 "logs:PutLogEvents",
-                "dynamodb:GetItem"
+                "dynamodb:GetItem",
+                "dynamodb:PutItem",
+                "dynamodb:DeleteItem",
+                "dynamodb:UpdateItem"
             ))
-            .resources(Arrays.asList("*"))
+            .resources(Arrays.asList(
+                peerConnectionsTable.getTableArn(),
+                "arn:aws:logs:*:*:*"
+            ))
             .build());
 
         // Create the relay Lambda function
@@ -133,11 +155,12 @@ public class RelayStack extends Stack {
                 .vpc(vpc)
                 .securityGroups(Arrays.asList(relaySecurityGroup))
                 .environment(Map.of(
-                    "SUBSCRIPTION_PROOFS_TABLE", "synapsed-subscription-proofs"
+                    "SUBSCRIPTION_PROOFS_TABLE", "synapsed-subscription-proofs",
+                    "PEER_CONNECTIONS_TABLE", peerConnectionsTable.getTableName()
                 ))
                 .build());
 
-        // Create the API Gateway
+        // Create the REST API Gateway
         this.relayApi = RestApi.Builder.create(this, "RelayApi")
             .restApiName("relay-api")
             .description("API for WebRTC signaling")
@@ -175,6 +198,11 @@ public class RelayStack extends Stack {
         new CfnOutput(this, "RelayApiUrl", CfnOutputProps.builder()
             .value(relayApi.getUrl())
             .description("Relay API URL")
+            .build());
+
+        new CfnOutput(this, "PeerConnectionsTableName", CfnOutputProps.builder()
+            .value(peerConnectionsTable.getTableName())
+            .description("Peer Connections Table Name")
             .build());
     }
 } 
