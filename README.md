@@ -11,58 +11,46 @@ This project contains the AWS CDK infrastructure code for the Synapse-D platform
 
 ## Project Structure
 
-```
-synapsed-aws/
-├── src/
-│   ├── main/
-│   │   └── java/
-│   │       └── me/
-│   │           └── synapsed/
-│   │               └── aws/
-│   │                   ├── SynapsedApp.java
-│   │                   ├── SynapsedStack.java
-│   │                   ├── lambda/
-│   │                   │   ├── RelayServer.java
-│   │                   │   ├── CreateSubscriptionHandler.java
-│   │                   │   ├── VerifySubscriptionHandler.java
-│   │                   │   ├── WebhookHandler.java
-│   │                   │   └── ...
-│   │                   ├── stacks/
-│   │                   │   ├── RelayStack.java
-│   │                   │   ├── SubscriptionStack.java
-│   │                   │   ├── AuthenticationStack.java
-│   │                   │   └── ...
-│   │                   └── utils/
-│   └── test/
-│       └── java/
-│           └── me/
-│               └── synapsed/
-│                   └── aws/
-│                       ├── lambda/
-│                       │   ├── RelayServerTest.java
-│                       │   ├── CreateSubscriptionHandlerTest.java
-│                       │   ├── VerifySubscriptionHandlerTest.java
-│                       │   ├── WebhookHandlerTest.java
-│                       │   └── ...
-│                       └── stacks/
-│                           ├── RelayStackTest.java
-│                           └── ...
-└── pom.xml
-```
+The project follows a standard Maven structure with the following main components:
+
+- **Lambda Functions**: Located in `src/main/java/me/synapsed/aws/lambda/`
+- **CDK Stacks**: Located in `src/main/java/me/synapsed/aws/stacks/`
+- **Tests**: Located in `src/test/java/me/synapsed/aws/`
+- **Documentation**: Located in `docs/`
 
 ## Key Components
 
 ### Relay Server
-The Relay Server provides a secure communication channel for P2P connections between Synapse-D applications. It uses WebRTC for direct peer-to-peer communication and includes subscription verification to ensure only authorized users can access the service.
+The Relay Server provides a secure communication channel for P2P connections between Synapse-D applications. It uses WebRTC for direct peer-to-peer communication and includes subscription verification to ensure only authorized users can access the service. The implementation includes:
+- WebRTC signaling message handling
+- Peer connection management
+- Subscription verification
+- Secure message forwarding via SQS
 
 ### Subscription Management
 The subscription system handles user subscriptions using Stripe for payment processing and DynamoDB for storing subscription data. It includes:
 - Subscription creation and verification
 - Webhook handling for subscription events
 - Zero-knowledge proof verification for privacy-preserving authentication
+- Subscription status tracking and management
 
 ### Security & Authentication
 The platform uses Decentralized Identity (DID) for client-side user management, with zero-knowledge proof verification for privacy-preserving authentication. AWS IAM roles and policies are used for service access control.
+
+### Monitoring & Alerting
+The platform includes comprehensive monitoring and alerting capabilities:
+- Enhanced monitoring with pattern analysis
+- Security event processing
+- Incident detection and response
+- Alert routing and analytics
+- Notification management and escalation
+
+### Compliance & Logging
+The platform includes robust compliance and logging features:
+- Compliance reporting
+- Log processing and analysis
+- Security monitoring
+- Audit trail management
 
 ## Getting Started
 
@@ -109,8 +97,10 @@ Detailed documentation for each component can be found in the `docs/` directory:
 - `07-alerting-stack.md`: Alerting infrastructure
 - `08-webapp-stack.md`: Web application infrastructure
 - `09-messenger-stack.md`: Messenger application infrastructure
+- `10-relay-stack.md`: Relay server infrastructure
 - `11-ml-stack.md`: Machine learning infrastructure
-- `12-enhanced-monitoring-stack.md`: Enhanced monitoring
+- `12-enhanced-monitoring-stack.md`: Enhanced monitoring with Substrates/Serventis
+- `13-subscription-stack.md`: Subscription management infrastructure
 
 ## Contributing
 

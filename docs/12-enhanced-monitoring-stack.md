@@ -271,4 +271,126 @@ public class PatternAnalysis {
 - Plan for updates
 - Implement proper versioning
 - Support backward compatibility
-- Enable smooth upgrades 
+- Enable smooth upgrades
+
+### API Methods and Usage
+
+#### Pattern Operations
+```java
+// Create a pattern
+Pattern pattern = Pattern.create("pattern-1");
+
+// Get pattern name
+String name = pattern.getName();
+
+// Get pattern status
+String status = pattern.getStatus();
+
+// Get pattern timestamp
+long timestamp = pattern.getTimestamp();
+
+// Set pattern status
+pattern.setStatus("detected");
+
+// Set pattern timestamp
+pattern.setTimestamp(System.currentTimeMillis());
+
+// Get pattern data
+Map<String, Object> data = pattern.getData();
+
+// Set pattern data
+pattern.setData(data);
+```
+
+#### Analyzer Operations
+```java
+// Create an analyzer
+Analyzer analyzer = Analyzer.create("analyzer-1");
+
+// Start the analyzer
+analyzer.start();
+
+// Stop the analyzer
+analyzer.stop();
+
+// Detect a pattern
+Pattern pattern = analyzer.detectPattern(event);
+
+// Check if a pattern is anomalous
+boolean isAnomalous = analyzer.isAnomalous(pattern);
+
+// Track pattern changes
+analyzer.trackPatternChange(pattern);
+
+// Alert on anomaly
+analyzer.alertOnAnomaly(pattern);
+
+// Get analyzer metrics
+AnalyzerMetrics metrics = analyzer.getMetrics();
+
+// Register a pattern detection handler
+analyzer.onPatternDetected(pattern -> {
+    // Handle pattern detection
+    System.out.println("Pattern detected: " + pattern.getName());
+});
+
+// Register an anomaly detection handler
+analyzer.onAnomalyDetected(pattern -> {
+    // Handle anomaly detection
+    System.out.println("Anomaly detected in pattern: " + pattern.getName());
+});
+```
+
+#### Event Operations
+```java
+// Create an event
+Event event = Event.create("event-1");
+
+// Get event type
+String type = event.getType();
+
+// Get event data
+Map<String, Object> data = event.getData();
+
+// Get event timestamp
+long timestamp = event.getTimestamp();
+
+// Set event data
+event.setData(data);
+
+// Set event timestamp
+event.setTimestamp(System.currentTimeMillis());
+
+// Get event source
+String source = event.getSource();
+
+// Set event source
+event.setSource("source");
+```
+
+#### Insight Operations
+```java
+// Create an insight
+Insight insight = Insight.create("insight-1");
+
+// Get insight name
+String name = insight.getName();
+
+// Get insight description
+String description = insight.getDescription();
+
+// Get insight timestamp
+long timestamp = insight.getTimestamp();
+
+// Set insight description
+insight.setDescription("description");
+
+// Set insight timestamp
+insight.setTimestamp(System.currentTimeMillis());
+
+// Get insight data
+Map<String, Object> data = insight.getData();
+
+// Set insight data
+insight.setData(data);
+``` 
