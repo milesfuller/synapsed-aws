@@ -13,16 +13,25 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
+import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
 
 public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
     private final DynamoDbClient dynamoDbClient;
     private final ObjectMapper objectMapper;
     private final String subscriptionProofsTable;
+    private final String peerConnectionsTable;
+    private final String signalingQueueUrl;
+    private final SqsClient sqsClient;
 
     public RelayServer() {
         this.dynamoDbClient = DynamoDbClient.builder().build();
         this.objectMapper = new ObjectMapper();
         this.subscriptionProofsTable = System.getenv("SUBSCRIPTION_PROOFS_TABLE");
+        this.peerConnectionsTable = System.getenv("PEER_CONNECTIONS_TABLE");
+        this.signalingQueueUrl = System.getenv("SIGNALING_QUEUE_URL");
+        this.sqsClient = SqsClient.builder().build();
     }
 
     @Override
@@ -114,7 +123,7 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
             key.put("peerId", AttributeValue.builder().s(peerId).build());
 
             GetItemRequest request = GetItemRequest.builder()
-                .tableName(System.getenv("PEER_CONNECTIONS_TABLE"))
+                .tableName(peerConnectionsTable)
                 .key(key)
                 .build();
 
@@ -125,6 +134,11 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
                     .withBody("Peer not found or not connected");
             }
 
+            // Get the peer's connection information
+            Map<String, AttributeValue> peerInfo = response.item();
+            String peerConnectionId = peerInfo.get("connectionId").s();
+            String peerEndpoint = peerInfo.get("endpoint").s();
+
             // Prepare the signaling message to forward
             Map<String, Object> signalingMessage = new HashMap<>(data);
             // Only add fromPeerId if it exists in the data
@@ -132,20 +146,24 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
                 signalingMessage.put("fromPeerId", data.get("fromPeerId"));
             }
             signalingMessage.put("timestamp", System.currentTimeMillis());
+            signalingMessage.put("targetPeerId", peerId);
+            signalingMessage.put("targetConnectionId", peerConnectionId);
+            signalingMessage.put("targetEndpoint", peerEndpoint);
 
-            // Forward the signaling message to the peer
-            // In a real implementation, this would use WebSockets or another mechanism
-            // to send the message to the peer's endpoint
-            // For now, we'll simulate this by returning a success response
+            // Convert the message to JSON
+            String messageBody = objectMapper.writeValueAsString(signalingMessage);
+
+            // Send the message to the SQS queue
+            SendMessageRequest sendMessageRequest = SendMessageRequest.builder()
+                .queueUrl(signalingQueueUrl)
+                .messageBody(messageBody)
+                .build();
+
+            SendMessageResponse sendMessageResponse = sqsClient.sendMessage(sendMessageRequest);
             
             // Log the signaling event
             String fromPeerId = data.containsKey("fromPeerId") ? (String) data.get("fromPeerId") : "unknown";
-            System.out.println("Forwarding " + type + " from " + fromPeerId + " to " + peerId);
-
-            // In a production environment, we would use the AWS SDK to send the message to the peer
-            // For example, using the AWS SDK for JavaScript (Node.js) in a separate Lambda function
-            // or using the AWS SDK for Java to send a message to an SQS queue that another Lambda
-            // function would process to forward the message to the peer.
+            System.out.println("Forwarding " + type + " from " + fromPeerId + " to " + peerId + " (MessageId: " + sendMessageResponse.messageId() + ")");
 
             return new APIGatewayProxyResponseEvent()
                 .withStatusCode(200)

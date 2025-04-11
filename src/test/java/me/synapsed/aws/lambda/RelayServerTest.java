@@ -25,6 +25,10 @@ import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
 
 import java.lang.reflect.Field;
 
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
+import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
+
 class RelayServerTest {
 
     @Mock
@@ -35,6 +39,9 @@ class RelayServerTest {
 
     @Mock
     private DynamoDbClient dynamoDbClient;
+    
+    @Mock
+    private SqsClient sqsClient;
 
     private RelayServer handler;
 
@@ -47,6 +54,15 @@ class RelayServerTest {
         Field dynamoDbClientField = RelayServer.class.getDeclaredField("dynamoDbClient");
         dynamoDbClientField.setAccessible(true);
         dynamoDbClientField.set(handler, dynamoDbClient);
+        
+        // Mock SQS client
+        Field sqsClientField = RelayServer.class.getDeclaredField("sqsClient");
+        sqsClientField.setAccessible(true);
+        sqsClientField.set(handler, sqsClient);
+        
+        // Mock SQS response
+        when(sqsClient.sendMessage(any(SendMessageRequest.class)))
+            .thenReturn(SendMessageResponse.builder().messageId("test-message-id").build());
     }
 
     @Test
