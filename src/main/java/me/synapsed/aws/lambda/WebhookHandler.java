@@ -25,10 +25,10 @@ import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
 
 public class WebhookHandler implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
+    private final DynamoDbClient dynamoDb;
     private final String subscriptionsTable;
-    private final DynamoDbClient dynamoDbClient;
-    private LambdaLogger logger;
     private final String webhookSecret;
+    private LambdaLogger logger;
 
     // Valid subscription status transitions
     private static final Map<String, Set<String>> VALID_STATUS_TRANSITIONS = new HashMap<>();
@@ -52,24 +52,18 @@ public class WebhookHandler implements RequestHandler<APIGatewayProxyRequestEven
         VALID_STATUS_TRANSITIONS.put("past_due", fromPastDue);
     }
 
-    public WebhookHandler() {
-        this(DynamoDbClient.builder().build(), null);
-    }
-
     // Constructor for testing
-    WebhookHandler(DynamoDbClient dynamoDbClient) {
-        this(dynamoDbClient, null);
-    }
-
-    // Constructor for testing with environment
-    WebhookHandler(DynamoDbClient dynamoDbClient, Map<String, String> env) {
-        this.dynamoDbClient = dynamoDbClient;
-        Map<String, String> environment = env != null ? env : System.getenv();
-        this.subscriptionsTable = environment.get("SUBSCRIPTIONS_TABLE");
-        this.webhookSecret = environment.get("STRIPE_WEBHOOK_SECRET");
+    public WebhookHandler(DynamoDbClient dynamoDbClient, Map<String, String> env) {
+        this.dynamoDb = dynamoDbClient;
+        this.subscriptionsTable = env.getOrDefault("SUBSCRIPTIONS_TABLE", System.getenv("SUBSCRIPTIONS_TABLE"));
+        this.webhookSecret = env.getOrDefault("STRIPE_WEBHOOK_SECRET", System.getenv("STRIPE_WEBHOOK_SECRET"));
         
         // Initialize Stripe
-        Stripe.apiKey = environment.get("STRIPE_SECRET_KEY");
+        Stripe.apiKey = env.getOrDefault("STRIPE_SECRET_KEY", System.getenv("STRIPE_SECRET_KEY"));
+    }
+
+    public WebhookHandler() {
+        this(DynamoDbClient.create(), new HashMap<>());
     }
 
     @Override
@@ -129,7 +123,7 @@ public class WebhookHandler implements RequestHandler<APIGatewayProxyRequestEven
                 .key(Map.of("id", AttributeValue.builder().s(subscriptionId).build()))
                 .build();
 
-            GetItemResponse getResponse = dynamoDbClient.getItem(getRequest);
+            GetItemResponse getResponse = dynamoDb.getItem(getRequest);
             String currentStatus = getResponse.hasItem() ? 
                 getResponse.item().get("status").s() : "pending";
 
@@ -180,7 +174,7 @@ public class WebhookHandler implements RequestHandler<APIGatewayProxyRequestEven
                     .item(item)
                     .build();
 
-                dynamoDbClient.putItem(putRequest);
+                dynamoDb.putItem(putRequest);
                 
                 logger.log(String.format("Successfully updated subscription %s with status %s", 
                     subscriptionId, newStatus));
@@ -233,7 +227,7 @@ public class WebhookHandler implements RequestHandler<APIGatewayProxyRequestEven
                     .item(item)
                     .build();
 
-                dynamoDbClient.putItem(putRequest);
+                dynamoDb.putItem(putRequest);
                 
                 logger.log(String.format("Successfully cancelled subscription %s", subscriptionId));
                 

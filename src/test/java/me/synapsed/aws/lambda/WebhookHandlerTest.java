@@ -78,20 +78,24 @@ class WebhookHandlerTest {
     private Price mockPrice;
 
     private WebhookHandler handler;
-    private Map<String, String> testEnv;
 
     @BeforeEach
     void setUp() throws EventDataObjectDeserializationException {
         MockitoAnnotations.openMocks(this);
         when(context.getLogger()).thenReturn(logger);
         
-        // Set up test environment
-        testEnv = new HashMap<>();
-        testEnv.put("SUBSCRIPTIONS_TABLE", "test-subscriptions-table");
-        testEnv.put("STRIPE_WEBHOOK_SECRET", "test-webhook-secret");
-        testEnv.put("STRIPE_SECRET_KEY", "test-stripe-key");
+        // Set up test environment variables
+        System.setProperty("SUBSCRIPTIONS_TABLE", "test-subscriptions-table");
+        System.setProperty("STRIPE_WEBHOOK_SECRET", "test-webhook-secret");
+        System.setProperty("STRIPE_SECRET_KEY", "test-stripe-key");
         
-        handler = new WebhookHandler(dynamoDb, testEnv);
+        // Create environment variables map
+        Map<String, String> envVars = new HashMap<>();
+        envVars.put("SUBSCRIPTIONS_TABLE", "test-subscriptions-table");
+        envVars.put("STRIPE_WEBHOOK_SECRET", "test-webhook-secret");
+        envVars.put("STRIPE_SECRET_KEY", "test-stripe-key");
+        
+        handler = new WebhookHandler(dynamoDb, envVars);
         
         // Mock DynamoDB response
         when(dynamoDb.putItem(any(PutItemRequest.class)))

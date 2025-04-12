@@ -27,18 +27,24 @@ public class PeerConnectionHandler implements RequestHandler<APIGatewayProxyRequ
     private static final long CONNECTION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
     public PeerConnectionHandler() {
-        this.dynamoDbClient = DynamoDbClient.builder().build();
+        this.dynamoDbClient = DynamoDbClient.create();
         this.objectMapper = new ObjectMapper();
         this.peerConnectionsTable = System.getenv("PEER_CONNECTIONS_TABLE");
         this.subscriptionProofsTable = System.getenv("SUBSCRIPTION_PROOFS_TABLE");
     }
 
-    // Constructor for testing
-    PeerConnectionHandler(DynamoDbClient dynamoDbClient) {
+    public PeerConnectionHandler(DynamoDbClient dynamoDbClient) {
         this.dynamoDbClient = dynamoDbClient;
         this.objectMapper = new ObjectMapper();
         this.peerConnectionsTable = System.getenv("PEER_CONNECTIONS_TABLE");
         this.subscriptionProofsTable = System.getenv("SUBSCRIPTION_PROOFS_TABLE");
+    }
+
+    public PeerConnectionHandler(DynamoDbClient dynamoDbClient, Map<String, String> env) {
+        this.dynamoDbClient = dynamoDbClient;
+        this.objectMapper = new ObjectMapper();
+        this.peerConnectionsTable = env.getOrDefault("PEER_CONNECTIONS_TABLE", System.getenv("PEER_CONNECTIONS_TABLE"));
+        this.subscriptionProofsTable = env.getOrDefault("SUBSCRIPTION_PROOFS_TABLE", System.getenv("SUBSCRIPTION_PROOFS_TABLE"));
     }
 
     @Override

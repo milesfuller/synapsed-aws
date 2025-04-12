@@ -22,18 +22,18 @@ public class VerifySubscriptionHandler implements RequestHandler<APIGatewayProxy
     private final String subscriptionsTable;
     private final String proofsTable;
 
-    public VerifySubscriptionHandler(DynamoDbClient dynamoDb) {
+    public VerifySubscriptionHandler(DynamoDbClient dynamoDb, Map<String, String> env) {
         this.dynamoDb = dynamoDb;
         this.objectMapper = new ObjectMapper();
-        this.subscriptionsTable = System.getenv("SUBSCRIPTIONS_TABLE");
-        this.proofsTable = System.getenv("PROOFS_TABLE");
+        this.subscriptionsTable = env.getOrDefault("SUBSCRIPTIONS_TABLE", System.getenv("SUBSCRIPTIONS_TABLE"));
+        this.proofsTable = env.getOrDefault("PROOFS_TABLE", System.getenv("PROOFS_TABLE"));
         
         // Initialize Stripe
-        Stripe.apiKey = System.getenv("STRIPE_SECRET_KEY");
+        Stripe.apiKey = env.getOrDefault("STRIPE_SECRET_KEY", System.getenv("STRIPE_SECRET_KEY"));
     }
 
     public VerifySubscriptionHandler() {
-        this(DynamoDbClient.builder().build());
+        this(DynamoDbClient.builder().build(), new HashMap<>());
     }
 
     @Override

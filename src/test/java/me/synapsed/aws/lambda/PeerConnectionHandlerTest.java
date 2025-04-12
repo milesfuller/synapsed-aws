@@ -13,6 +13,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockitoAnnotations;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.LambdaLogger;
@@ -46,15 +47,35 @@ public class PeerConnectionHandlerTest {
 
     @BeforeEach
     void setUp() {
-        // Set required environment variables
-        System.setProperty("PEER_CONNECTIONS_TABLE", "test-peer-connections-table");
-        System.setProperty("SUBSCRIPTION_PROOFS_TABLE", "test-subscription-proofs-table");
+        MockitoAnnotations.openMocks(this);
         
+        // Initialize mocks
         dynamoDbClient = mock(DynamoDbClient.class);
-        handler = new PeerConnectionHandler(dynamoDbClient);
+        
+        // Initialize context and logger
         context = mock(Context.class);
         logger = mock(LambdaLogger.class);
         when(context.getLogger()).thenReturn(logger);
+        
+        // Set up test environment variables
+        System.setProperty("PEER_CONNECTIONS_TABLE", "test-peer-connections-table");
+        System.setProperty("SUBSCRIPTION_PROOFS_TABLE", "test-subscription-proofs-table");
+        
+        // Create environment variables map
+        Map<String, String> envVars = new HashMap<>();
+        envVars.put("PEER_CONNECTIONS_TABLE", "test-peer-connections-table");
+        envVars.put("SUBSCRIPTION_PROOFS_TABLE", "test-subscription-proofs-table");
+        
+        // Initialize handler with environment variables
+        handler = new PeerConnectionHandler(dynamoDbClient, envVars);
+        
+        // Mock DynamoDB response
+        when(dynamoDbClient.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().item(new HashMap<>()).build());
+        
+        when(dynamoDbClient.query(any(QueryRequest.class)))
+            .thenReturn(QueryResponse.builder().items(Collections.emptyList()).build());
+        
         objectMapper = new ObjectMapper();
     }
 

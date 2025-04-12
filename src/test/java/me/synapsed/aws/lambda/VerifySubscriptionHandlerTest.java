@@ -41,7 +41,13 @@ class VerifySubscriptionHandlerTest {
         System.setProperty("PROOFS_TABLE", "test-proofs-table");
         System.setProperty("STRIPE_SECRET_KEY", "test-stripe-key");
         
-        handler = new VerifySubscriptionHandler(dynamoDbClient);
+        // Create environment variables map
+        Map<String, String> envVars = new HashMap<>();
+        envVars.put("SUBSCRIPTIONS_TABLE", "test-subscriptions-table");
+        envVars.put("PROOFS_TABLE", "test-proofs-table");
+        envVars.put("STRIPE_SECRET_KEY", "test-stripe-key");
+        
+        handler = new VerifySubscriptionHandler(dynamoDbClient, envVars);
     }
 
     @Test
