@@ -116,7 +116,7 @@ class RelayServerTest {
         headers.put("X-DID", "test-did");
         headers.put("X-Subscription-Proof", "valid-proof");
         request.setHeaders(headers);
-        request.setBody("{\"type\":\"offer\",\"peerId\":\"peer-123\"}");
+        request.setBody("{\"type\":\"offer\",\"peerId\":\"peer-123\",\"sdp\":\"v=0\\r\\no=- 1234567890 2 IN IP4 127.0.0.1\\r\\ns=-\\r\\nt=0 0\\r\\na=group:BUNDLE audio video\\r\\n\"}");
 
         // Mock subscription proof lookup
         Map<String, AttributeValue> proofItem = new HashMap<>();
@@ -129,6 +129,8 @@ class RelayServerTest {
         peerItem.put("peerId", AttributeValue.builder().s("peer-123").build());
         peerItem.put("endpoint", AttributeValue.builder().s("wss://example.com").build());
         peerItem.put("connectionId", AttributeValue.builder().s("conn-123").build());
+        peerItem.put("status", AttributeValue.builder().s("connected").build());
+        peerItem.put("connectedAt", AttributeValue.builder().s(String.valueOf(System.currentTimeMillis())).build());
 
         when(dynamoDbClient.getItem(any(GetItemRequest.class)))
             .thenReturn(
@@ -165,5 +167,65 @@ class RelayServerTest {
 
         assertEquals(400, response.getStatusCode());
         assertTrue(response.getBody().contains("Invalid signaling type"));
+    }
+    
+    @Test
+    void handleRequest_MissingRequiredFields_Returns400() throws Exception {
+        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent();
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-DID", "test-did");
+        headers.put("X-Subscription-Proof", "valid-proof");
+        request.setHeaders(headers);
+        request.setBody("{\"type\":\"offer\",\"peerId\":\"peer-123\"}"); // Missing sdp field
+
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("did", AttributeValue.builder().s("test-did").build());
+        item.put("proof", AttributeValue.builder().s("valid-proof").build());
+        item.put("expiresAt", AttributeValue.builder().s(String.valueOf(System.currentTimeMillis() + 3600000)).build());
+
+        when(dynamoDbClient.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder()
+                .item(item)
+                .build());
+
+        APIGatewayProxyResponseEvent response = handler.handleRequest(request, context);
+
+        assertEquals(400, response.getStatusCode());
+        assertTrue(response.getBody().contains("Missing required field for offer: sdp"));
+    }
+    
+    @Test
+    void handleRequest_PeerNotConnected_Returns400() throws Exception {
+        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent();
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-DID", "test-did");
+        headers.put("X-Subscription-Proof", "valid-proof");
+        request.setHeaders(headers);
+        request.setBody("{\"type\":\"offer\",\"peerId\":\"peer-123\",\"sdp\":\"v=0\\r\\no=- 1234567890 2 IN IP4 127.0.0.1\\r\\ns=-\\r\\nt=0 0\\r\\na=group:BUNDLE audio video\\r\\n\"}");
+
+        // Mock subscription proof lookup
+        Map<String, AttributeValue> proofItem = new HashMap<>();
+        proofItem.put("did", AttributeValue.builder().s("test-did").build());
+        proofItem.put("proof", AttributeValue.builder().s("valid-proof").build());
+        proofItem.put("expiresAt", AttributeValue.builder().s(String.valueOf(System.currentTimeMillis() + 3600000)).build());
+
+        // Mock peer connection lookup with disconnected status
+        Map<String, AttributeValue> peerItem = new HashMap<>();
+        peerItem.put("peerId", AttributeValue.builder().s("peer-123").build());
+        peerItem.put("endpoint", AttributeValue.builder().s("wss://example.com").build());
+        peerItem.put("connectionId", AttributeValue.builder().s("conn-123").build());
+        peerItem.put("status", AttributeValue.builder().s("disconnected").build());
+        peerItem.put("connectedAt", AttributeValue.builder().s(String.valueOf(System.currentTimeMillis())).build());
+
+        when(dynamoDbClient.getItem(any(GetItemRequest.class)))
+            .thenReturn(
+                GetItemResponse.builder().item(proofItem).build(),  // First call for subscription proof
+                GetItemResponse.builder().item(peerItem).build()    // Second call for peer connection
+            );
+
+        APIGatewayProxyResponseEvent response = handler.handleRequest(request, context);
+
+        assertEquals(400, response.getStatusCode());
+        assertTrue(response.getBody().contains("Peer is not connected"));
     }
 } 

@@ -1,7 +1,9 @@
 package me.synapsed.aws.lambda;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
@@ -14,8 +16,11 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
 import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.InvalidMessageContentsException;
+import software.amazon.awssdk.services.sqs.model.QueueDoesNotExistException;
 import software.amazon.awssdk.services.sqs.model.SendMessageRequest;
 import software.amazon.awssdk.services.sqs.model.SendMessageResponse;
+import software.amazon.awssdk.services.sqs.model.SqsException;
 
 public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, APIGatewayProxyResponseEvent> {
     private final DynamoDbClient dynamoDbClient;
@@ -24,6 +29,30 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
     private final String peerConnectionsTable;
     private final String signalingQueueUrl;
     private final SqsClient sqsClient;
+    
+    // Valid WebRTC signaling message types
+    private static final Set<String> VALID_SIGNALING_TYPES = new HashSet<>();
+    static {
+        VALID_SIGNALING_TYPES.add("offer");
+        VALID_SIGNALING_TYPES.add("answer");
+        VALID_SIGNALING_TYPES.add("ice-candidate");
+    }
+    
+    // Required fields for each signaling type
+    private static final Map<String, Set<String>> REQUIRED_FIELDS = new HashMap<>();
+    static {
+        Set<String> offerFields = new HashSet<>();
+        offerFields.add("sdp");
+        REQUIRED_FIELDS.put("offer", offerFields);
+        
+        Set<String> answerFields = new HashSet<>();
+        answerFields.add("sdp");
+        REQUIRED_FIELDS.put("answer", answerFields);
+        
+        Set<String> iceFields = new HashSet<>();
+        iceFields.add("candidate");
+        REQUIRED_FIELDS.put("ice-candidate", iceFields);
+    }
 
     public RelayServer() {
         this.dynamoDbClient = DynamoDbClient.builder().build();
@@ -72,12 +101,20 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
                     .withBody("Missing required fields: type, peerId");
             }
 
+            // Validate signaling message format
+            String validationError = validateSignalingMessage(type, requestBody);
+            if (validationError != null) {
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(400)
+                    .withBody(validationError);
+            }
+
             switch (type) {
                 case "offer":
                 case "answer":
                 case "ice-candidate":
                     // Forward the signaling message to the target peer
-                    return handleSignaling(type, peerId, requestBody);
+                    return handleSignaling(type, peerId, requestBody, context);
                 default:
                     return new APIGatewayProxyResponseEvent()
                         .withStatusCode(400)
@@ -116,7 +153,48 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
         }
     }
 
-    private APIGatewayProxyResponseEvent handleSignaling(String type, String peerId, Map<String, Object> data) {
+    /**
+     * Validates the WebRTC signaling message format
+     * @param type The signaling message type
+     * @param data The message data
+     * @return Error message if validation fails, null if validation passes
+     */
+    private String validateSignalingMessage(String type, Map<String, Object> data) {
+        // Check if the type is valid
+        if (!VALID_SIGNALING_TYPES.contains(type)) {
+            return "Invalid signaling type: " + type;
+        }
+        
+        // Check for required fields based on the type
+        Set<String> requiredFields = REQUIRED_FIELDS.get(type);
+        if (requiredFields != null) {
+            for (String field : requiredFields) {
+                if (!data.containsKey(field) || data.get(field) == null) {
+                    return "Missing required field for " + type + ": " + field;
+                }
+            }
+        }
+        
+        // Validate SDP format for offer and answer
+        if (type.equals("offer") || type.equals("answer")) {
+            String sdp = (String) data.get("sdp");
+            if (sdp == null || !sdp.startsWith("v=0")) {
+                return "Invalid SDP format for " + type;
+            }
+        }
+        
+        // Validate ICE candidate format
+        if (type.equals("ice-candidate")) {
+            String candidate = (String) data.get("candidate");
+            if (candidate == null || !candidate.startsWith("candidate:")) {
+                return "Invalid ICE candidate format";
+            }
+        }
+        
+        return null;
+    }
+
+    private APIGatewayProxyResponseEvent handleSignaling(String type, String peerId, Map<String, Object> data, Context context) {
         try {
             // Look up the peer's connection information in DynamoDB
             Map<String, AttributeValue> key = new HashMap<>();
@@ -136,6 +214,27 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
 
             // Get the peer's connection information
             Map<String, AttributeValue> peerInfo = response.item();
+            
+            // Check if the peer is connected
+            String status = peerInfo.get("status").s();
+            if (!"connected".equals(status)) {
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(400)
+                    .withBody("Peer is not connected. Current status: " + status);
+            }
+            
+            // Check if the connection has timed out
+            String connectedAt = peerInfo.get("connectedAt").s();
+            long connectionTime = Long.parseLong(connectedAt);
+            long currentTime = System.currentTimeMillis();
+            long connectionTimeout = 30 * 60 * 1000; // 30 minutes in milliseconds
+            
+            if (currentTime - connectionTime > connectionTimeout) {
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(400)
+                    .withBody("Peer connection has timed out");
+            }
+            
             String peerConnectionId = peerInfo.get("connectionId").s();
             String peerEndpoint = peerInfo.get("endpoint").s();
 
@@ -159,17 +258,34 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
                 .messageBody(messageBody)
                 .build();
 
-            SendMessageResponse sendMessageResponse = sqsClient.sendMessage(sendMessageRequest);
-            
-            // Log the signaling event
-            String fromPeerId = data.containsKey("fromPeerId") ? (String) data.get("fromPeerId") : "unknown";
-            System.out.println("Forwarding " + type + " from " + fromPeerId + " to " + peerId + " (MessageId: " + sendMessageResponse.messageId() + ")");
+            try {
+                SendMessageResponse sendMessageResponse = sqsClient.sendMessage(sendMessageRequest);
+                
+                // Log the signaling event
+                String fromPeerId = data.containsKey("fromPeerId") ? (String) data.get("fromPeerId") : "unknown";
+                context.getLogger().log("Forwarding " + type + " from " + fromPeerId + " to " + peerId + " (MessageId: " + sendMessageResponse.messageId() + ")");
 
-            return new APIGatewayProxyResponseEvent()
-                .withStatusCode(200)
-                .withBody("Signaling message forwarded");
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(200)
+                    .withBody("Signaling message forwarded");
+            } catch (QueueDoesNotExistException e) {
+                context.getLogger().log("Error: SQS queue does not exist: " + e.getMessage());
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(500)
+                    .withBody("Internal server error: Signaling queue not found");
+            } catch (InvalidMessageContentsException e) {
+                context.getLogger().log("Error: Invalid message contents: " + e.getMessage());
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(400)
+                    .withBody("Invalid message format");
+            } catch (SqsException e) {
+                context.getLogger().log("Error sending message to SQS: " + e.getMessage());
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(500)
+                    .withBody("Error forwarding signaling message: " + e.getMessage());
+            }
         } catch (Exception e) {
-            System.err.println("Error handling signaling: " + e.getMessage());
+            context.getLogger().log("Error handling signaling: " + e.getMessage());
             return new APIGatewayProxyResponseEvent()
                 .withStatusCode(500)
                 .withBody("Error forwarding signaling message: " + e.getMessage());
