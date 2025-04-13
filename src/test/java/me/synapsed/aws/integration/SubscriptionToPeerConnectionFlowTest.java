@@ -6,6 +6,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Collections;
@@ -255,6 +257,276 @@ public class SubscriptionToPeerConnectionFlowTest {
             Map<String, String> connectResponseBody = objectMapper.readValue(connectResponse.getBody(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, String>>() {});
             String peerId = connectResponseBody.get("peerId");
             assertNotNull(peerId);
+        }
+    }
+
+    @Test
+    void testSubscriptionStatusTransitionActiveToCanceled() throws Exception {
+        // Mock DynamoDB response for existing subscription
+        Map<String, AttributeValue> existingSubscription = new HashMap<>();
+        existingSubscription.put("id", AttributeValue.builder().s("sub_123").build());
+        existingSubscription.put("status", AttributeValue.builder().s("active").build());
+        existingSubscription.put("customerId", AttributeValue.builder().s("cus_123").build());
+        existingSubscription.put("currentPeriodEnd", AttributeValue.builder().n("1735689600").build());
+        existingSubscription.put("currentPeriodStart", AttributeValue.builder().n("1735603200").build());
+        existingSubscription.put("cancelAtPeriodEnd", AttributeValue.builder().bool(false).build());
+
+        when(dynamoDbClient.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().item(existingSubscription).build());
+        when(dynamoDbClient.putItem(any(PutItemRequest.class)))
+            .thenReturn(PutItemResponse.builder().build());
+
+        // Create webhook request for subscription cancellation
+        APIGatewayProxyRequestEvent webhookRequest = new APIGatewayProxyRequestEvent();
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Stripe-Signature", "test-signature");
+        webhookRequest.setHeaders(headers);
+
+        // Mock Stripe Event and related objects
+        Event mockEvent = mock(Event.class);
+        Data mockEventData = mock(Data.class);
+        EventDataObjectDeserializer mockDeserializer = mock(EventDataObjectDeserializer.class);
+        Subscription mockSubscription = mock(Subscription.class);
+        SubscriptionItemCollection mockItemCollection = mock(SubscriptionItemCollection.class);
+        SubscriptionItem mockSubscriptionItem = mock(SubscriptionItem.class);
+        Price mockPrice = mock(Price.class);
+
+        // Set up mock behavior for subscription update
+        when(mockEvent.getType()).thenReturn("customer.subscription.updated");
+        when(mockEvent.getData()).thenReturn(mockEventData);
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(mockDeserializer);
+        when(mockDeserializer.deserializeUnsafe()).thenReturn(mockSubscription);
+
+        when(mockSubscription.getId()).thenReturn("sub_123");
+        when(mockSubscription.getStatus()).thenReturn("canceled");
+        when(mockSubscription.getCustomer()).thenReturn("cus_123");
+        when(mockSubscription.getCurrentPeriodEnd()).thenReturn(1735689600L);
+        when(mockSubscription.getCurrentPeriodStart()).thenReturn(1735603200L);
+        when(mockSubscription.getCancelAtPeriodEnd()).thenReturn(true);
+        when(mockSubscription.getMetadata()).thenReturn(Collections.emptyMap());
+        when(mockSubscription.getItems()).thenReturn(mockItemCollection);
+
+        when(mockItemCollection.getData()).thenReturn(List.of(mockSubscriptionItem));
+        when(mockSubscriptionItem.getPrice()).thenReturn(mockPrice);
+        when(mockSubscriptionItem.getQuantity()).thenReturn(1L);
+        when(mockPrice.getId()).thenReturn("price_123");
+
+        try (MockedStatic<Webhook> mockedWebhook = mockStatic(Webhook.class)) {
+            mockedWebhook.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
+                .thenReturn(mockEvent);
+
+            // Create webhook request body
+            Map<String, Object> webhookBody = new HashMap<>();
+            webhookBody.put("type", "customer.subscription.updated");
+            webhookBody.put("data", Map.of("object", Map.of(
+                "id", "sub_123",
+                "status", "canceled",
+                "customer", "cus_123"
+            )));
+            webhookRequest.setBody(objectMapper.writeValueAsString(webhookBody));
+
+            // Send webhook request
+            APIGatewayProxyResponseEvent response = webhookHandler.handleRequest(webhookRequest, context);
+
+            // Verify response
+            assertEquals(200, response.getStatusCode());
+            assertEquals("Subscription updated successfully", response.getBody());
+
+            // Verify DynamoDB was called to update the subscription
+            verify(dynamoDbClient, times(1)).putItem(any(PutItemRequest.class));
+        }
+    }
+
+    @Test
+    void testSubscriptionUpdateWithMetadataChanges() throws Exception {
+        // Mock DynamoDB response for existing subscription
+        Map<String, AttributeValue> existingSubscription = new HashMap<>();
+        existingSubscription.put("id", AttributeValue.builder().s("sub_123").build());
+        existingSubscription.put("status", AttributeValue.builder().s("active").build());
+
+        when(dynamoDbClient.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().item(existingSubscription).build());
+        when(dynamoDbClient.putItem(any(PutItemRequest.class)))
+            .thenReturn(PutItemResponse.builder().build());
+
+        // Create webhook request
+        APIGatewayProxyRequestEvent webhookRequest = new APIGatewayProxyRequestEvent();
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Stripe-Signature", "test-signature");
+        webhookRequest.setHeaders(headers);
+
+        // Mock Stripe objects
+        Event mockEvent = mock(Event.class);
+        EventDataObjectDeserializer mockDeserializer = mock(EventDataObjectDeserializer.class);
+        Subscription mockSubscription = mock(Subscription.class);
+        SubscriptionItemCollection mockItemCollection = mock(SubscriptionItemCollection.class);
+        SubscriptionItem mockSubscriptionItem = mock(SubscriptionItem.class);
+        Price mockPrice = mock(Price.class);
+
+        // Set up metadata changes
+        Map<String, String> updatedMetadata = new HashMap<>();
+        updatedMetadata.put("plan_type", "premium");
+        updatedMetadata.put("user_tier", "enterprise");
+
+        when(mockEvent.getType()).thenReturn("customer.subscription.updated");
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(mockDeserializer);
+        when(mockDeserializer.deserializeUnsafe()).thenReturn(mockSubscription);
+        when(mockSubscription.getId()).thenReturn("sub_123");
+        when(mockSubscription.getStatus()).thenReturn("active");
+        when(mockSubscription.getMetadata()).thenReturn(updatedMetadata);
+        when(mockSubscription.getItems()).thenReturn(mockItemCollection);
+        when(mockItemCollection.getData()).thenReturn(List.of(mockSubscriptionItem));
+        when(mockSubscriptionItem.getPrice()).thenReturn(mockPrice);
+        when(mockPrice.getId()).thenReturn("price_123");
+
+        try (MockedStatic<Webhook> mockedWebhook = mockStatic(Webhook.class)) {
+            mockedWebhook.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
+                .thenReturn(mockEvent);
+
+            Map<String, Object> webhookBody = new HashMap<>();
+            webhookBody.put("type", "customer.subscription.updated");
+            webhookBody.put("data", Map.of("object", Map.of(
+                "id", "sub_123",
+                "status", "active",
+                "metadata", updatedMetadata
+            )));
+            webhookRequest.setBody(objectMapper.writeValueAsString(webhookBody));
+
+            APIGatewayProxyResponseEvent response = webhookHandler.handleRequest(webhookRequest, context);
+
+            assertEquals(200, response.getStatusCode());
+            assertEquals("Subscription updated successfully", response.getBody());
+            verify(dynamoDbClient, times(1)).putItem(any(PutItemRequest.class));
+        }
+    }
+
+    @Test
+    void testSubscriptionUpdateWithPriceChanges() throws Exception {
+        // Mock DynamoDB response for existing subscription
+        Map<String, AttributeValue> existingSubscription = new HashMap<>();
+        existingSubscription.put("id", AttributeValue.builder().s("sub_123").build());
+        existingSubscription.put("status", AttributeValue.builder().s("active").build());
+
+        when(dynamoDbClient.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().item(existingSubscription).build());
+        when(dynamoDbClient.putItem(any(PutItemRequest.class)))
+            .thenReturn(PutItemResponse.builder().build());
+
+        // Create webhook request
+        APIGatewayProxyRequestEvent webhookRequest = new APIGatewayProxyRequestEvent();
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Stripe-Signature", "test-signature");
+        webhookRequest.setHeaders(headers);
+
+        // Mock Stripe objects
+        Event mockEvent = mock(Event.class);
+        EventDataObjectDeserializer mockDeserializer = mock(EventDataObjectDeserializer.class);
+        Subscription mockSubscription = mock(Subscription.class);
+        SubscriptionItemCollection mockItemCollection = mock(SubscriptionItemCollection.class);
+        SubscriptionItem mockSubscriptionItem = mock(SubscriptionItem.class);
+        Price mockPrice = mock(Price.class);
+
+        when(mockEvent.getType()).thenReturn("customer.subscription.updated");
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(mockDeserializer);
+        when(mockDeserializer.deserializeUnsafe()).thenReturn(mockSubscription);
+        when(mockSubscription.getId()).thenReturn("sub_123");
+        when(mockSubscription.getStatus()).thenReturn("active");
+        when(mockSubscription.getItems()).thenReturn(mockItemCollection);
+        when(mockItemCollection.getData()).thenReturn(List.of(mockSubscriptionItem));
+        when(mockSubscriptionItem.getPrice()).thenReturn(mockPrice);
+        when(mockSubscriptionItem.getQuantity()).thenReturn(2L); // Updated quantity
+        when(mockPrice.getId()).thenReturn("price_456"); // New price ID
+
+        try (MockedStatic<Webhook> mockedWebhook = mockStatic(Webhook.class)) {
+            mockedWebhook.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
+                .thenReturn(mockEvent);
+
+            Map<String, Object> webhookBody = new HashMap<>();
+            webhookBody.put("type", "customer.subscription.updated");
+            webhookBody.put("data", Map.of("object", Map.of(
+                "id", "sub_123",
+                "status", "active",
+                "items", Map.of("data", List.of(Map.of(
+                    "price", Map.of("id", "price_456"),
+                    "quantity", 2
+                )))
+            )));
+            webhookRequest.setBody(objectMapper.writeValueAsString(webhookBody));
+
+            APIGatewayProxyResponseEvent response = webhookHandler.handleRequest(webhookRequest, context);
+
+            assertEquals(200, response.getStatusCode());
+            assertEquals("Subscription updated successfully", response.getBody());
+            verify(dynamoDbClient, times(1)).putItem(any(PutItemRequest.class));
+        }
+    }
+
+    @Test
+    void testInvalidWebhookSignature() throws Exception {
+        APIGatewayProxyRequestEvent webhookRequest = new APIGatewayProxyRequestEvent();
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Stripe-Signature", "invalid-signature");
+        webhookRequest.setHeaders(headers);
+
+        try (MockedStatic<Webhook> mockedWebhook = mockStatic(Webhook.class)) {
+            mockedWebhook.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
+                .thenThrow(new com.stripe.exception.SignatureVerificationException("Invalid signature", "raw-payload"));
+
+            Map<String, Object> webhookBody = new HashMap<>();
+            webhookBody.put("type", "customer.subscription.updated");
+            webhookBody.put("data", Map.of("object", Map.of("id", "sub_123")));
+            webhookRequest.setBody(objectMapper.writeValueAsString(webhookBody));
+
+            APIGatewayProxyResponseEvent response = webhookHandler.handleRequest(webhookRequest, context);
+
+            assertEquals(400, response.getStatusCode());
+            assertEquals("Invalid signature", response.getBody());
+        }
+    }
+
+    @Test
+    void testSubscriptionUpdateInvalidTransition() throws Exception {
+        // Mock DynamoDB response for existing subscription
+        Map<String, AttributeValue> existingSubscription = new HashMap<>();
+        existingSubscription.put("id", AttributeValue.builder().s("sub_123").build());
+        existingSubscription.put("status", AttributeValue.builder().s("active").build());
+
+        when(dynamoDbClient.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().item(existingSubscription).build());
+
+        // Create webhook request
+        APIGatewayProxyRequestEvent webhookRequest = new APIGatewayProxyRequestEvent();
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Stripe-Signature", "test-signature");
+        webhookRequest.setHeaders(headers);
+
+        // Mock Stripe objects
+        Event mockEvent = mock(Event.class);
+        EventDataObjectDeserializer mockDeserializer = mock(EventDataObjectDeserializer.class);
+        Subscription mockSubscription = mock(Subscription.class);
+
+        when(mockEvent.getType()).thenReturn("customer.subscription.updated");
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(mockDeserializer);
+        when(mockDeserializer.deserializeUnsafe()).thenReturn(mockSubscription);
+        when(mockSubscription.getId()).thenReturn("sub_123");
+        when(mockSubscription.getStatus()).thenReturn("incomplete_expired"); // Invalid transition
+
+        try (MockedStatic<Webhook> mockedWebhook = mockStatic(Webhook.class)) {
+            mockedWebhook.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
+                .thenReturn(mockEvent);
+
+            Map<String, Object> webhookBody = new HashMap<>();
+            webhookBody.put("type", "customer.subscription.updated");
+            webhookBody.put("data", Map.of("object", Map.of(
+                "id", "sub_123",
+                "status", "incomplete_expired"
+            )));
+            webhookRequest.setBody(objectMapper.writeValueAsString(webhookBody));
+
+            APIGatewayProxyResponseEvent response = webhookHandler.handleRequest(webhookRequest, context);
+
+            assertEquals(403, response.getStatusCode());
+            assertEquals("Invalid subscription status transition", response.getBody());
         }
     }
 }

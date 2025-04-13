@@ -41,8 +41,8 @@ public class WebhookHandler implements RequestHandler<APIGatewayProxyRequestEven
 
         Set<String> fromActive = new HashSet<>();
         fromActive.add("past_due");
-        fromActive.add("canceled");
         fromActive.add("unpaid");
+        fromActive.add("canceled");
         VALID_STATUS_TRANSITIONS.put("active", fromActive);
 
         Set<String> fromPastDue = new HashSet<>();
@@ -133,7 +133,7 @@ public class WebhookHandler implements RequestHandler<APIGatewayProxyRequestEven
                 logger.log(String.format("Invalid status transition from %s to %s for subscription %s", 
                     currentStatus, newStatus, subscriptionId));
                 return new APIGatewayProxyResponseEvent()
-                    .withStatusCode(400)
+                    .withStatusCode(403)
                     .withBody("Invalid subscription status transition");
             }
 

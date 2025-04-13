@@ -2,6 +2,7 @@ package me.synapsed.aws.lambda;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mockStatic;
@@ -200,7 +201,7 @@ class WebhookHandlerTest {
 
             APIGatewayProxyResponseEvent response = handler.handleRequest(request, context);
 
-            assertEquals(400, response.getStatusCode());
+            assertEquals(403, response.getStatusCode());
             assertEquals("Invalid subscription status transition", response.getBody());
         }
     }
@@ -297,6 +298,70 @@ class WebhookHandlerTest {
 
             assertEquals(409, response.getStatusCode());
             assertTrue(response.getBody().contains("Concurrent modification error"));
+        }
+    }
+
+    @Test
+    void testSubscriptionUpdateInvalidTransition() throws EventDataObjectDeserializationException {
+        // Mock existing subscription in DynamoDB
+        Map<String, AttributeValue> existingItem = new HashMap<>();
+        existingItem.put("id", AttributeValue.builder().s("sub_123").build());
+        existingItem.put("status", AttributeValue.builder().s("active").build());
+        when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().item(existingItem).build());
+
+        // Mock subscription status
+        when(mockEvent.getType()).thenReturn("customer.subscription.updated");
+        when(mockSubscription.getStatus()).thenReturn("incomplete_expired");
+
+        // Create request
+        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent();
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Stripe-Signature", "valid-signature");
+        request.setHeaders(headers);
+        request.setBody("{}"); // Body content doesn't matter as we're mocking Webhook.constructEvent
+
+        try (MockedStatic<Webhook> webhookMockedStatic = mockStatic(Webhook.class)) {
+            webhookMockedStatic.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
+                .thenReturn(mockEvent);
+
+            APIGatewayProxyResponseEvent response = handler.handleRequest(request, context);
+
+            assertEquals(403, response.getStatusCode());
+            assertEquals("Invalid subscription status transition", response.getBody());
+        }
+    }
+
+    @Test
+    void testSubscriptionUpdateActiveToCanceled() throws EventDataObjectDeserializationException {
+        // Mock existing subscription in DynamoDB
+        Map<String, AttributeValue> existingItem = new HashMap<>();
+        existingItem.put("id", AttributeValue.builder().s("sub_123").build());
+        existingItem.put("status", AttributeValue.builder().s("active").build());
+        when(dynamoDb.getItem(any(GetItemRequest.class)))
+            .thenReturn(GetItemResponse.builder().item(existingItem).build());
+
+        // Mock subscription status change to canceled
+        when(mockEvent.getType()).thenReturn("customer.subscription.updated");
+        when(mockSubscription.getStatus()).thenReturn("canceled");
+        when(mockEvent.getDataObjectDeserializer()).thenReturn(mockDeserializer);
+        when(mockDeserializer.deserializeUnsafe()).thenReturn(mockSubscription);
+
+        // Create request
+        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent();
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Stripe-Signature", "valid-signature");
+        request.setHeaders(headers);
+        request.setBody("{}"); // Body content doesn't matter as we're mocking Webhook.constructEvent
+
+        try (MockedStatic<Webhook> webhookMockedStatic = mockStatic(Webhook.class)) {
+            webhookMockedStatic.when(() -> Webhook.constructEvent(anyString(), anyString(), anyString()))
+                .thenReturn(mockEvent);
+
+            APIGatewayProxyResponseEvent response = handler.handleRequest(request, context);
+
+            assertEquals(200, response.getStatusCode());
+            assertNotNull(response.getBody());
         }
     }
 } 
