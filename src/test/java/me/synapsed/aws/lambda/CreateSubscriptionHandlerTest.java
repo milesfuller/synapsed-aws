@@ -3,7 +3,6 @@ package me.synapsed.aws.lambda;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -28,7 +27,7 @@ import com.amazonaws.services.lambda.runtime.LambdaLogger;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyRequestEvent;
 import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.stripe.exception.StripeException;
+import com.stripe.exception.InvalidRequestException;
 import com.stripe.model.Customer;
 import com.stripe.model.checkout.Session;
 import com.stripe.param.CustomerCreateParams;
@@ -243,7 +242,7 @@ class CreateSubscriptionHandlerTest {
 
         try (MockedStatic<Session> sessionMockedStatic = mockStatic(Session.class)) {
             sessionMockedStatic.when(() -> Session.create(any(SessionCreateParams.class)))
-                .thenThrow(mock(StripeException.class));
+                .thenThrow(new InvalidRequestException("API Error", "req_123", "api_error", null, null, null));
 
             APIGatewayProxyResponseEvent response = handler.handleRequest(request, context);
 

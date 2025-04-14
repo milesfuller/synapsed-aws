@@ -199,10 +199,10 @@ public class CreateSubscriptionHandler implements RequestHandler<APIGatewayProxy
                 .withStatusCode(400)
                 .withBody("Stripe API error: " + e.getMessage());
         } catch (ResourceNotFoundException e) {
-            context.getLogger().log("DynamoDB table not found: " + e.getMessage());
+            context.getLogger().log("Database configuration error: " + e.getMessage());
             return new APIGatewayProxyResponseEvent()
                 .withStatusCode(500)
-                .withBody("Database configuration error");
+                .withBody("Database configuration error: " + e.getMessage());
         } catch (Exception e) {
             context.getLogger().log("Error creating subscription: " + e.getMessage());
             return new APIGatewayProxyResponseEvent()

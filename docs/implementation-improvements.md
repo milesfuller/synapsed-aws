@@ -55,10 +55,10 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
     - [x] Test peer connection timeouts
     - [x] Test invalid peer states
     - [x] Test subscription proof validation
-  - [ ] Test error scenarios across components
-    - [ ] Invalid subscription proofs
-    - [ ] Network failures
-    - [ ] Database operation failures
+  - [x] Test error scenarios across components
+    - [x] Invalid subscription proofs
+    - [x] Network failures
+    - [x] Database operation failures
 - [ ] Add performance tests
   - [ ] Load testing for relay server
   - [ ] Concurrent connection handling
