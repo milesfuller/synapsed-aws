@@ -35,7 +35,11 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 - [x] Add configurations for DynamoDB tables and SQS queues
 - [x] Add API Gateway CORS settings
 - [x] Ensure proper IAM permissions for Lambda functions
-- [ ] Add auto-scaling configurations
+- [x] Add auto-scaling configurations
+  - [x] Lambda provisioned concurrency auto-scaling
+  - [x] Target tracking scaling policy with 80% utilization
+  - [x] Min capacity: 1, Max capacity: 100
+  - [x] Tests for auto-scaling configuration
 - [ ] Add backup and disaster recovery plans
 
 ## 6. Testing Improvements
@@ -59,6 +63,25 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
     - [x] Invalid subscription proofs
     - [x] Network failures
     - [x] Database operation failures
+    - [x] Resource not found errors
+    - [x] Stripe API timeouts
+- [x] Add unit tests for all Lambda functions
+  - [x] CreateSubscriptionHandler tests
+  - [x] WebhookHandler tests
+  - [x] RelayServer tests
+  - [x] PeerConnectionHandler tests
+  - [x] VerifySubscriptionHandler tests
+- [x] Add infrastructure stack tests
+  - [x] RelayStack tests
+  - [x] WebAppStack tests
+  - [x] AuthenticationStack tests
+  - [x] AlertingStack tests
+  - [x] IncidentResponseStack tests
+  - [x] ComplianceStack tests
+  - [x] SecurityMonitoringStack tests
+  - [x] LoggingStack tests
+  - [x] ConfigurationManagementStack tests
+  - [x] SecurityStack tests
 - [ ] Add performance tests
   - [ ] Load testing for relay server
   - [ ] Concurrent connection handling
@@ -87,4 +110,4 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 2. Infrastructure Improvements
 3. Testing Improvements
 4. Documentation Improvements
-5. Monitoring and Observability 
+5. Monitoring and Observability

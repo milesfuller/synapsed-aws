@@ -78,6 +78,33 @@ public class RelayStackTest {
                 "Timeout", 30
             )));
 
+        // Verify Lambda Alias
+        template.hasResourceProperties("AWS::Lambda::Alias",
+            Match.objectLike(Map.of(
+                "Name", "prod"
+            )));
+
+        // Verify Application Auto Scaling Target
+        template.hasResourceProperties("AWS::ApplicationAutoScaling::ScalableTarget",
+            Match.objectLike(Map.of(
+                "MinCapacity", 1,
+                "MaxCapacity", 100,
+                "ScalableDimension", "lambda:function:ProvisionedConcurrency",
+                "ServiceNamespace", "lambda"
+            )));
+
+        // Verify Auto Scaling Policy
+        template.hasResourceProperties("AWS::ApplicationAutoScaling::ScalingPolicy",
+            Match.objectLike(Map.of(
+                "PolicyType", "TargetTrackingScaling",
+                "TargetTrackingScalingPolicyConfiguration", Match.objectLike(Map.of(
+                    "TargetValue", 0.8,
+                    "PredefinedMetricSpecification", Match.objectLike(Map.of(
+                        "PredefinedMetricType", "LambdaProvisionedConcurrencyUtilization"
+                    ))
+                ))
+            )));
+
         // Verify API Gateway
         template.hasResourceProperties("AWS::ApiGateway::RestApi", 
             Match.objectLike(Map.of(

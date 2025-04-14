@@ -14,6 +14,8 @@ import software.amazon.awscdk.services.apigateway.LambdaIntegration;
 import software.amazon.awscdk.services.apigateway.MethodOptions;
 import software.amazon.awscdk.services.apigateway.MethodResponse;
 import software.amazon.awscdk.services.apigateway.RestApi;
+import software.amazon.awscdk.services.backup.BackupPlan;
+import software.amazon.awscdk.services.backup.BackupPlanRule;
 import software.amazon.awscdk.services.dynamodb.Attribute;
 import software.amazon.awscdk.services.dynamodb.AttributeType;
 import software.amazon.awscdk.services.dynamodb.BillingMode;
@@ -23,14 +25,19 @@ import software.amazon.awscdk.services.ec2.Port;
 import software.amazon.awscdk.services.ec2.SecurityGroup;
 import software.amazon.awscdk.services.ec2.Vpc;
 import software.amazon.awscdk.services.ec2.VpcProps;
+import software.amazon.awscdk.services.events.Schedule;
 import software.amazon.awscdk.services.iam.Effect;
 import software.amazon.awscdk.services.iam.PolicyStatement;
 import software.amazon.awscdk.services.iam.Role;
 import software.amazon.awscdk.services.iam.RoleProps;
 import software.amazon.awscdk.services.iam.ServicePrincipal;
+import software.amazon.awscdk.services.lambda.Alias;
+import software.amazon.awscdk.services.lambda.AutoScalingOptions;
 import software.amazon.awscdk.services.lambda.Function;
 import software.amazon.awscdk.services.lambda.FunctionProps;
+import software.amazon.awscdk.services.lambda.IScalableFunctionAttribute;
 import software.amazon.awscdk.services.lambda.Runtime;
+import software.amazon.awscdk.services.lambda.UtilizationScalingOptions;
 import software.amazon.awscdk.services.logs.LogGroup;
 import software.amazon.awscdk.services.logs.LogGroupProps;
 import software.amazon.awscdk.services.logs.RetentionDays;
@@ -189,6 +196,21 @@ public class RelayStack extends Stack {
                 ))
                 .build());
 
+        // Add auto-scaling policy for concurrent executions
+        Alias prodAlias = Alias.Builder.create(this, "ProdAlias")
+            .aliasName("prod")
+            .version(relayFunction.getCurrentVersion())
+            .build();
+
+        IScalableFunctionAttribute scalableTarget = prodAlias.addAutoScaling(AutoScalingOptions.builder()
+            .minCapacity(1)
+            .maxCapacity(100)
+            .build());
+
+        scalableTarget.scaleOnUtilization(UtilizationScalingOptions.builder()
+            .utilizationTarget(0.8)
+            .build());
+
         // Add outputs
         new CfnOutput(this, "RelayFunctionArn", CfnOutputProps.builder()
             .value(relayFunction.getFunctionArn())
@@ -204,5 +226,30 @@ public class RelayStack extends Stack {
             .value(peerConnectionsTable.getTableName())
             .description("Peer Connections Table Name")
             .build());
+
+        // Create backup plan with selection
+        BackupPlan.Builder.create(this, "RelayBackupPlan")
+            .backupPlanRules(Arrays.asList(
+                BackupPlanRule.Builder.create()
+                    .completionWindow(Duration.hours(2))
+                    .startWindow(Duration.hours(1))
+                    .scheduleExpression(Schedule.expression("cron(0 5 ? * * *)")) // Daily backup at 5 AM UTC
+                    .deleteAfter(Duration.days(30)) // Keep backups for 30 days
+                    .build(),
+                BackupPlanRule.Builder.create()
+                    .completionWindow(Duration.hours(2))
+                    .startWindow(Duration.hours(1))
+                    .scheduleExpression(Schedule.expression("cron(0 5 ? * SUN *)")) // Weekly backup on Sundays
+                    .deleteAfter(Duration.days(90)) // Keep weekly backups for 90 days
+                    .build()
+            ))
+            .build()
+            .addSelection("RelayResources", 
+                software.amazon.awscdk.services.backup.BackupSelectionOptions.builder()
+                    .resources(Arrays.asList(
+                        software.amazon.awscdk.services.backup.BackupResource.fromDynamoDbTable(peerConnectionsTable),
+                        software.amazon.awscdk.services.backup.BackupResource.fromArn(relayFunction.getFunctionArn())
+                    ))
+                    .build());
     }
 } 
