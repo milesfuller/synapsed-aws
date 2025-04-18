@@ -28,7 +28,37 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 - [ ] Add retry logic for SQS operations
 - [ ] Add circuit breaker pattern for external service calls
 
-## 3. WebhookHandler Improvements
+## 3. P2P Connection Improvements
+
+### Direct Connection Support
+- [ ] Add local network discovery using mDNS
+- [ ] Add Bluetooth transport layer
+- [ ] Add direct connection mode for known peers
+- [ ] Add connection caching mechanism
+- [ ] Add fallback logic for failed direct connections
+
+### Alternative Transport Layers
+- [ ] Implement PeerTransport interface
+- [ ] Add WebRTC transport implementation
+- [ ] Add Bluetooth transport implementation
+- [ ] Add Local Network transport implementation
+- [ ] Add transport priority system
+
+### Connection Management
+- [ ] Add connection strategy manager
+- [ ] Add transport selection logic
+- [ ] Add connection state persistence
+- [ ] Add reconnection handling
+- [ ] Add transport failover logic
+
+### Infrastructure Requirements
+- [ ] Add ElastiCache for connection state caching
+- [ ] Add IoT Core for alternative transport messaging
+- [ ] Add DynamoDB table for peer discovery
+- [ ] Add EC2 instances for STUN/TURN servers
+- [ ] Configure security groups for all transport protocols
+
+## 4. WebhookHandler Improvements
 
 ### Validation
 - [ ] Add validation for subscription status updates
@@ -40,7 +70,7 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 - [ ] Improve error logging for Stripe webhook events
 - [ ] Add validation for webhook signature
 
-## 4. CreateSubscriptionHandler Improvements
+## 5. CreateSubscriptionHandler Improvements
 
 ### Validation
 - [ ] Add validation for price ID against allowed plans
@@ -52,12 +82,21 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 - [ ] Improve error messages for failed subscription creation
 - [ ] Add validation for customer data
 
-## 5. Infrastructure Improvements
+## 6. Infrastructure Improvements
 
 ### DynamoDB Configuration
 - [ ] Add proper table configurations with indexes
 - [ ] Add TTL settings for temporary data
 - [ ] Add backup and restore procedures
+- [ ] Add table for connection caching
+- [ ] Add table for transport preferences
+
+### Alternative Transport Infrastructure
+- [ ] Configure IoT Core endpoints
+- [ ] Set up IoT Core rules
+- [ ] Configure ElastiCache clusters
+- [ ] Set up STUN/TURN servers
+- [ ] Configure mDNS discovery service
 
 ### SQS Configuration
 - [ ] Add proper queue configurations
@@ -74,7 +113,7 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 - [ ] Add least privilege principle implementation
 - [ ] Add resource-based policies
 
-## 6. Testing Improvements
+## 7. Testing Improvements
 
 ### Unit Tests
 - [ ] Increase test coverage for all handlers
@@ -86,7 +125,7 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 - [ ] Add load testing
 - [ ] Add chaos testing
 
-## 7. Documentation Improvements
+## 8. Documentation Improvements
 
 ### API Documentation
 - [ ] Add OpenAPI/Swagger documentation
@@ -98,7 +137,7 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 - [ ] Add deployment procedures
 - [ ] Add troubleshooting guides
 
-## 8. Monitoring and Observability
+## 9. Monitoring and Observability
 
 ### Logging
 - [ ] Add structured logging
@@ -115,13 +154,29 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 - [ ] Add performance monitoring
 - [ ] Add error tracking
 
+## 10. Transport Layer Security
+
+### Security Measures
+- [ ] Implement end-to-end encryption for direct connections
+- [ ] Add transport layer security for each protocol
+- [ ] Add peer authentication mechanisms
+- [ ] Add connection verification
+- [ ] Add secure key exchange
+
+### Compliance
+- [ ] Ensure GDPR compliance for peer data
+- [ ] Implement data privacy measures
+- [ ] Add audit logging for connections
+- [ ] Add security monitoring for all transports
+
 ## Priority Order
 
-1. PeerConnectionHandler Improvements (Missing Tests)
-2. RelayServer Improvements (Validation)
-3. WebhookHandler Improvements (Validation)
-4. CreateSubscriptionHandler Improvements (Validation)
-5. Infrastructure Improvements (DynamoDB Configuration)
-6. Testing Improvements (Unit Tests)
-7. Documentation Improvements (API Documentation)
-8. Monitoring and Observability (Logging) 
+1. P2P Connection Improvements (Direct Connection Support)
+2. Alternative Transport Infrastructure
+3. Transport Layer Security
+4. PeerConnectionHandler Improvements
+5. RelayServer Improvements
+6. Infrastructure Improvements
+7. Testing Improvements
+8. Documentation Improvements
+9. Monitoring and Observability 

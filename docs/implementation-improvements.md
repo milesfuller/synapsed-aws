@@ -8,6 +8,9 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 - [x] Add test for connection timeout cleanup
 - [x] Add validation for peer connection status
 - [x] Add error handling for failed DynamoDB operations
+- [ ] Add support for direct peer connections
+- [ ] Add alternative transport layer handling
+- [ ] Add connection caching mechanism
 
 ## 2. RelayServer Improvements
 - [x] Add validation for WebRTC signaling message format
@@ -15,8 +18,46 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 - [x] Add peer connection status checks before forwarding messages
 - [x] Add message retry mechanism for failed deliveries
 - [x] Add connection cleanup for disconnected peers
+- [ ] Add STUN/TURN server support
+- [ ] Add NAT traversal capabilities
+- [ ] Add direct connection fallback handling
 
-## 3. WebhookHandler Improvements
+## 3. P2P Connection Improvements
+- [ ] Direct Connection Support
+  - [ ] Implement local network discovery using mDNS
+  - [ ] Add Bluetooth transport layer
+  - [ ] Add direct connection mode for known peers
+  - [ ] Implement connection caching
+  - [ ] Add fallback logic to relay server
+- [ ] Alternative Transport Layers
+  - [ ] Create PeerTransport interface
+  - [ ] Implement WebRTC transport
+  - [ ] Implement Bluetooth transport
+  - [ ] Implement Local Network transport
+  - [ ] Add transport priority system
+- [ ] Connection Management
+  - [ ] Create connection strategy manager
+  - [ ] Implement transport selection logic
+  - [ ] Add connection state persistence
+  - [ ] Add reconnection handling
+  - [ ] Implement transport failover logic
+
+## 4. Infrastructure for P2P
+- [ ] Connection Caching
+  - [ ] Set up ElastiCache clusters
+  - [ ] Configure cache invalidation
+  - [ ] Add cache monitoring
+- [ ] Alternative Transport Support
+  - [ ] Configure IoT Core for messaging
+  - [ ] Set up STUN/TURN servers
+  - [ ] Configure mDNS discovery
+  - [ ] Set up security groups
+- [ ] Peer Discovery
+  - [ ] Create DynamoDB table for peer discovery
+  - [ ] Add TTL for temporary connections
+  - [ ] Configure indexes for efficient lookup
+
+## 5. WebhookHandler Improvements
 - [x] Add validation for subscription status updates
 - [x] Add error handling for failed DynamoDB operations
 - [x] Add handling for subscription metadata
@@ -24,14 +65,14 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 - [x] Add logging for webhook processing
 - [x] Fix status code consistency for invalid status transitions (403 instead of 400)
 
-## 4. CreateSubscriptionHandler Improvements
+## 6. CreateSubscriptionHandler Improvements
 - [x] Add validation for price ID against allowed plans
 - [x] Add idempotency handling for subscription creation
 - [x] Add cleanup for expired subscription proofs
 - [x] Add validation for subscription metadata
 - [x] Add error handling for Stripe API failures
 
-## 5. Infrastructure Improvements
+## 7. Infrastructure Improvements
 - [x] Add configurations for DynamoDB tables and SQS queues
 - [x] Add API Gateway CORS settings
 - [x] Ensure proper IAM permissions for Lambda functions
@@ -42,7 +83,7 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
   - [x] Tests for auto-scaling configuration
 - [ ] Add backup and disaster recovery plans
 
-## 6. Testing Improvements
+## 8. Testing Improvements
 - [x] Add integration tests for the entire flow
   - [x] Test subscription creation to peer connection flow
     - [x] Subscription creation with valid price ID
@@ -91,23 +132,55 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
   - [ ] Component failure recovery
   - [ ] Resource exhaustion handling
 
-## 7. Documentation Improvements
+## 9. Documentation Improvements
 - [x] Update API documentation with all endpoints
 - [x] Add architecture diagrams
 - [x] Add deployment instructions
 - [ ] Add troubleshooting guides
 - [ ] Add developer onboarding documentation
 
-## 8. Monitoring and Observability
+## 10. Monitoring and Observability
 - [x] Add CloudWatch alarms for critical errors
 - [x] Add custom metrics for peer connections
 - [ ] Add dashboards for monitoring system health
 - [ ] Add distributed tracing
 - [ ] Add anomaly detection
 
-## Priority Order
-1. CreateSubscriptionHandler Improvements
-2. Infrastructure Improvements
-3. Testing Improvements
-4. Documentation Improvements
-5. Monitoring and Observability
+## 11. Transport Layer Security
+- [ ] Security Implementation
+  - [ ] Add end-to-end encryption for direct connections
+  - [ ] Implement transport layer security protocols
+  - [ ] Add peer authentication system
+  - [ ] Implement connection verification
+  - [ ] Add secure key exchange mechanism
+- [ ] Compliance Measures
+  - [ ] Implement GDPR compliance features
+  - [ ] Add data privacy controls
+  - [ ] Set up audit logging
+  - [ ] Configure security monitoring
+
+## Priority Implementation Order
+1. Direct Connection Support
+   - Local network discovery
+   - Connection caching
+   - Fallback mechanisms
+2. Alternative Transport Infrastructure
+   - STUN/TURN servers
+   - IoT Core setup
+   - ElastiCache configuration
+3. Transport Security
+   - End-to-end encryption
+   - Authentication mechanisms
+   - Compliance measures
+4. Connection Management
+   - Strategy implementation
+   - State persistence
+   - Failover handling
+5. Testing and Validation
+   - Direct connection testing
+   - Transport layer testing
+   - Security testing
+6. Documentation and Monitoring
+   - Architecture updates
+   - Security documentation
+   - Monitoring implementation
