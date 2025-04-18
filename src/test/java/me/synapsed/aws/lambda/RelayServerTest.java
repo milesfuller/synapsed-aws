@@ -2,7 +2,9 @@ package me.synapsed.aws.lambda;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -10,10 +12,12 @@ import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatcher;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -147,7 +151,31 @@ class RelayServerTest {
         APIGatewayProxyResponseEvent response = handler.handleRequest(request, context);
 
         assertEquals(200, response.getStatusCode());
-        assertTrue(response.getBody().contains("Signaling message forwarded"));
+        
+        // Verify the response contains ICE servers and direct connection attempt
+        Map<String, Object> responseBody = objectMapper.readValue(response.getBody(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        assertTrue(responseBody.containsKey("iceServers"));
+        assertTrue(responseBody.containsKey("attemptDirectConnection"));
+        assertTrue((Boolean) responseBody.get("attemptDirectConnection"));
+        
+        // Verify the signaling message contains direct connection attempt
+        verify(sqsClient).sendMessage(argThat(new ArgumentMatcher<SendMessageRequest>() {
+            @Override
+            public boolean matches(SendMessageRequest req) {
+                try {
+                    Map<String, Object> messageBody = objectMapper.readValue(req.messageBody(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+                    return messageBody.containsKey("attemptDirectConnection") && 
+                           (Boolean) messageBody.get("attemptDirectConnection");
+                } catch (Exception e) {
+                    return false;
+                }
+            }
+            
+            @Override
+            public String toString() {
+                return "SendMessageRequest with attemptDirectConnection=true";
+            }
+        }));
     }
 
     @Test
@@ -275,7 +303,12 @@ class RelayServerTest {
         APIGatewayProxyResponseEvent offerResponse = handler.handleRequest(offerRequest, context);
         
         assertEquals(200, offerResponse.getStatusCode());
-        assertEquals("Signaling message forwarded", offerResponse.getBody());
+        Map<String, Object> offerResponseBody = objectMapper.readValue(offerResponse.getBody(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        assertTrue(offerResponseBody.containsKey("message"));
+        assertEquals("Signaling message forwarded", offerResponseBody.get("message"));
+        assertTrue(offerResponseBody.containsKey("attemptDirectConnection"));
+        assertTrue((Boolean) offerResponseBody.get("attemptDirectConnection"));
+        assertTrue(offerResponseBody.containsKey("iceServers"));
         
         // Test 2: Responder1 sends answer to initiator
         Map<String, Object> answerData = new HashMap<>();
@@ -369,6 +402,319 @@ class RelayServerTest {
         verify(sqsClient, never()).sendMessage(any(SendMessageRequest.class));
     }
 
+    @Test
+    void handleRequest_WithTurnServer_IncludesTurnServer() throws Exception {
+        // Create environment variables with TURN server configuration
+        Map<String, String> env = new HashMap<>();
+        env.put("TURN_SERVER", "turn:test-turn-server.com:3478");
+        env.put("TURN_USERNAME", "test-username");
+        env.put("TURN_CREDENTIAL", "test-credential");
+        
+        // Create a new instance of RelayServer with the test environment
+        RelayServer newHandler = new RelayServer(env);
+        
+        // Set up the mocks for the new handler
+        Field dynamoDbClientField = RelayServer.class.getDeclaredField("dynamoDbClient");
+        dynamoDbClientField.setAccessible(true);
+        dynamoDbClientField.set(newHandler, dynamoDbClient);
+        
+        Field sqsClientField = RelayServer.class.getDeclaredField("sqsClient");
+        sqsClientField.setAccessible(true);
+        sqsClientField.set(newHandler, sqsClient);
+
+        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent();
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-DID", "test-did");
+        headers.put("X-Subscription-Proof", "valid-proof");
+        request.setHeaders(headers);
+        request.setBody("{\"type\":\"offer\",\"peerId\":\"peer-123\",\"sdp\":\"v=0\\r\\no=- 1234567890 2 IN IP4 127.0.0.1\\r\\ns=-\\r\\nt=0 0\\r\\na=group:BUNDLE audio video\\r\\n\"}");
+
+        // Mock subscription proof lookup
+        Map<String, AttributeValue> proofItem = new HashMap<>();
+        proofItem.put("did", AttributeValue.builder().s("test-did").build());
+        proofItem.put("proof", AttributeValue.builder().s("valid-proof").build());
+        proofItem.put("expiresAt", AttributeValue.builder().s(String.valueOf(System.currentTimeMillis() + 3600000)).build());
+
+        // Mock peer connection lookup
+        Map<String, AttributeValue> peerItem = new HashMap<>();
+        peerItem.put("peerId", AttributeValue.builder().s("peer-123").build());
+        peerItem.put("endpoint", AttributeValue.builder().s("wss://example.com").build());
+        peerItem.put("connectionId", AttributeValue.builder().s("conn-123").build());
+        peerItem.put("status", AttributeValue.builder().s("connected").build());
+        peerItem.put("connectedAt", AttributeValue.builder().s(String.valueOf(System.currentTimeMillis())).build());
+
+        when(dynamoDbClient.getItem(any(GetItemRequest.class)))
+            .thenReturn(
+                GetItemResponse.builder().item(proofItem).build(),
+                GetItemResponse.builder().item(peerItem).build()
+            );
+
+        APIGatewayProxyResponseEvent response = newHandler.handleRequest(request, context);
+
+        assertEquals(200, response.getStatusCode());
+        
+        // Verify the response contains TURN server configuration
+        Map<String, Object> responseBody = objectMapper.readValue(response.getBody(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        List<Map<String, String>> responseIceServers = objectMapper.convertValue(responseBody.get("iceServers"), 
+            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, String>>>() {});
+        
+        boolean hasTurnServer = responseIceServers.stream()
+            .anyMatch(server -> server.containsKey("username") && 
+                              server.get("username").equals("test-username"));
+        
+        assertTrue(hasTurnServer, "Response should include TURN server configuration");
+    }
+
+    @Test
+    void handleRequest_WithOnlyStunServer_IncludesStunServer() throws Exception {
+        // Create environment variables with only STUN server configuration
+        Map<String, String> env = new HashMap<>();
+        env.put("STUN_SERVER", "stun:stun.test-server.com:19302");
+        
+        // Create a new instance of RelayServer with the test environment
+        RelayServer newHandler = new RelayServer(env);
+        
+        // Set up the mocks for the new handler
+        Field dynamoDbClientField = RelayServer.class.getDeclaredField("dynamoDbClient");
+        dynamoDbClientField.setAccessible(true);
+        dynamoDbClientField.set(newHandler, dynamoDbClient);
+        
+        Field sqsClientField = RelayServer.class.getDeclaredField("sqsClient");
+        sqsClientField.setAccessible(true);
+        sqsClientField.set(newHandler, sqsClient);
+
+        APIGatewayProxyRequestEvent request = createValidRequest();
+        APIGatewayProxyResponseEvent response = newHandler.handleRequest(request, context);
+
+        assertEquals(200, response.getStatusCode());
+        
+        // Verify the response contains only STUN server configuration
+        Map<String, Object> responseBody = objectMapper.readValue(response.getBody(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        List<Map<String, String>> responseIceServers = objectMapper.convertValue(responseBody.get("iceServers"), 
+            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, String>>>() {});
+        
+        assertEquals(1, responseIceServers.size(), "Should have exactly one ICE server");
+        assertTrue(responseIceServers.get(0).containsKey("urls"), "Should have urls field");
+        assertEquals("stun:stun.test-server.com:19302", responseIceServers.get(0).get("urls"), "Should have correct STUN server URL");
+        assertFalse(responseIceServers.get(0).containsKey("username"), "Should not have username field for STUN");
+        assertFalse(responseIceServers.get(0).containsKey("credential"), "Should not have credential field for STUN");
+    }
+
+    @Test
+    void handleRequest_WithInvalidTurnCredentials_ExcludesTurnServer() throws Exception {
+        // Create environment variables with invalid TURN credentials
+        Map<String, String> env = new HashMap<>();
+        env.put("STUN_SERVER", "stun:stun.test-server.com:19302");
+        env.put("TURN_SERVER", "turn:test-turn-server.com:3478");
+        env.put("TURN_USERNAME", ""); // Empty username
+        env.put("TURN_CREDENTIAL", "test-credential");
+        
+        RelayServer newHandler = new RelayServer(env);
+        
+        // Set up the mocks
+        Field dynamoDbClientField = RelayServer.class.getDeclaredField("dynamoDbClient");
+        dynamoDbClientField.setAccessible(true);
+        dynamoDbClientField.set(newHandler, dynamoDbClient);
+        
+        Field sqsClientField = RelayServer.class.getDeclaredField("sqsClient");
+        sqsClientField.setAccessible(true);
+        sqsClientField.set(newHandler, sqsClient);
+
+        APIGatewayProxyRequestEvent request = createValidRequest();
+        APIGatewayProxyResponseEvent response = newHandler.handleRequest(request, context);
+
+        assertEquals(200, response.getStatusCode());
+        
+        // Verify the response contains only STUN server
+        Map<String, Object> responseBody = objectMapper.readValue(response.getBody(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        List<Map<String, String>> responseIceServers = objectMapper.convertValue(responseBody.get("iceServers"), 
+            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, String>>>() {});
+        
+        assertEquals(1, responseIceServers.size(), "Should have exactly one ICE server");
+        assertTrue(responseIceServers.get(0).containsKey("urls"), "Should have urls field");
+        assertEquals("stun:stun.test-server.com:19302", responseIceServers.get(0).get("urls"), "Should have correct STUN server URL");
+    }
+
+    @Test
+    void handleRequest_WithMultipleIceServers_IncludesAllServers() throws Exception {
+        // Create environment variables with multiple ICE servers
+        Map<String, String> env = new HashMap<>();
+        env.put("STUN_SERVER", "stun:stun1.test-server.com:19302,stun:stun2.test-server.com:19302");
+        env.put("TURN_SERVER", "turn:turn1.test-server.com:3478,turn:turn2.test-server.com:3478");
+        env.put("TURN_USERNAME", "test-username");
+        env.put("TURN_CREDENTIAL", "test-credential");
+        
+        RelayServer newHandler = new RelayServer(env);
+        
+        // Set up the mocks
+        Field dynamoDbClientField = RelayServer.class.getDeclaredField("dynamoDbClient");
+        dynamoDbClientField.setAccessible(true);
+        dynamoDbClientField.set(newHandler, dynamoDbClient);
+        
+        Field sqsClientField = RelayServer.class.getDeclaredField("sqsClient");
+        sqsClientField.setAccessible(true);
+        sqsClientField.set(newHandler, sqsClient);
+
+        APIGatewayProxyRequestEvent request = createValidRequest();
+        APIGatewayProxyResponseEvent response = newHandler.handleRequest(request, context);
+
+        assertEquals(200, response.getStatusCode());
+        
+        // Verify the response contains all ICE servers
+        Map<String, Object> responseBody = objectMapper.readValue(response.getBody(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        List<Map<String, String>> responseIceServers = objectMapper.convertValue(responseBody.get("iceServers"), 
+            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, String>>>() {});
+        
+        assertEquals(4, responseIceServers.size(), "Should have all ICE servers");
+        
+        // Verify STUN servers
+        assertTrue(responseIceServers.stream()
+            .anyMatch(server -> server.get("urls").equals("stun:stun1.test-server.com:19302")));
+        assertTrue(responseIceServers.stream()
+            .anyMatch(server -> server.get("urls").equals("stun:stun2.test-server.com:19302")));
+        
+        // Verify TURN servers
+        assertTrue(responseIceServers.stream()
+            .anyMatch(server -> server.get("urls").equals("turn:turn1.test-server.com:3478") &&
+                              server.get("username").equals("test-username")));
+        assertTrue(responseIceServers.stream()
+            .anyMatch(server -> server.get("urls").equals("turn:turn2.test-server.com:3478") &&
+                              server.get("username").equals("test-username")));
+    }
+
+    @Test
+    void handleRequest_WithMalformedStunUrl_DefaultsToGoogleStun() throws Exception {
+        // Create environment variables with malformed STUN URL
+        Map<String, String> env = new HashMap<>();
+        env.put("STUN_SERVER", "invalid-stun-url");
+        
+        RelayServer newHandler = new RelayServer(env);
+        
+        // Set up the mocks
+        Field dynamoDbClientField = RelayServer.class.getDeclaredField("dynamoDbClient");
+        dynamoDbClientField.setAccessible(true);
+        dynamoDbClientField.set(newHandler, dynamoDbClient);
+        
+        Field sqsClientField = RelayServer.class.getDeclaredField("sqsClient");
+        sqsClientField.setAccessible(true);
+        sqsClientField.set(newHandler, sqsClient);
+
+        APIGatewayProxyRequestEvent request = createValidRequest();
+        APIGatewayProxyResponseEvent response = newHandler.handleRequest(request, context);
+
+        assertEquals(200, response.getStatusCode());
+        
+        // Verify the response contains the default Google STUN server
+        Map<String, Object> responseBody = objectMapper.readValue(response.getBody(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        List<Map<String, String>> responseIceServers = objectMapper.convertValue(responseBody.get("iceServers"), 
+            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, String>>>() {});
+        
+        assertEquals(1, responseIceServers.size(), "Should have exactly one ICE server");
+        assertEquals("stun:stun.l.google.com:19302", responseIceServers.get(0).get("urls"), 
+            "Should default to Google STUN server");
+    }
+
+    @Test
+    void handleRequest_WithMalformedTurnUrl_ExcludesTurnServer() throws Exception {
+        // Create environment variables with malformed TURN URL
+        Map<String, String> env = new HashMap<>();
+        env.put("STUN_SERVER", "stun:stun.test-server.com:19302");
+        env.put("TURN_SERVER", "invalid-turn-url");
+        env.put("TURN_USERNAME", "test-username");
+        env.put("TURN_CREDENTIAL", "test-credential");
+        
+        RelayServer newHandler = new RelayServer(env);
+        
+        // Set up the mocks
+        Field dynamoDbClientField = RelayServer.class.getDeclaredField("dynamoDbClient");
+        dynamoDbClientField.setAccessible(true);
+        dynamoDbClientField.set(newHandler, dynamoDbClient);
+        
+        Field sqsClientField = RelayServer.class.getDeclaredField("sqsClient");
+        sqsClientField.setAccessible(true);
+        sqsClientField.set(newHandler, sqsClient);
+
+        APIGatewayProxyRequestEvent request = createValidRequest();
+        APIGatewayProxyResponseEvent response = newHandler.handleRequest(request, context);
+
+        assertEquals(200, response.getStatusCode());
+        
+        // Verify the response contains only STUN server
+        Map<String, Object> responseBody = objectMapper.readValue(response.getBody(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        List<Map<String, String>> responseIceServers = objectMapper.convertValue(responseBody.get("iceServers"), 
+            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, String>>>() {});
+        
+        assertEquals(1, responseIceServers.size(), "Should have exactly one ICE server");
+        assertEquals("stun:stun.test-server.com:19302", responseIceServers.get(0).get("urls"), 
+            "Should only include valid STUN server");
+    }
+
+    @Test
+    void handleRequest_WithNoIceServers_ReturnsDefaultStun() throws Exception {
+        // Create environment variables with no ICE servers
+        Map<String, String> env = new HashMap<>();
+        
+        RelayServer newHandler = new RelayServer(env);
+        
+        // Set up the mocks
+        Field dynamoDbClientField = RelayServer.class.getDeclaredField("dynamoDbClient");
+        dynamoDbClientField.setAccessible(true);
+        dynamoDbClientField.set(newHandler, dynamoDbClient);
+        
+        Field sqsClientField = RelayServer.class.getDeclaredField("sqsClient");
+        sqsClientField.setAccessible(true);
+        sqsClientField.set(newHandler, sqsClient);
+
+        APIGatewayProxyRequestEvent request = createValidRequest();
+        APIGatewayProxyResponseEvent response = newHandler.handleRequest(request, context);
+
+        assertEquals(200, response.getStatusCode());
+        
+        // Verify the response contains the default Google STUN server
+        Map<String, Object> responseBody = objectMapper.readValue(response.getBody(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        List<Map<String, String>> responseIceServers = objectMapper.convertValue(responseBody.get("iceServers"), 
+            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, String>>>() {});
+        
+        assertEquals(1, responseIceServers.size(), "Should have exactly one ICE server");
+        assertEquals("stun:stun.l.google.com:19302", responseIceServers.get(0).get("urls"), 
+            "Should default to Google STUN server");
+    }
+
+    @Test
+    void handleRequest_WithEmptyEnvironmentVariables_ReturnsDefaultStun() throws Exception {
+        // Create environment variables with empty values
+        Map<String, String> env = new HashMap<>();
+        env.put("STUN_SERVER", "");
+        env.put("TURN_SERVER", "");
+        env.put("TURN_USERNAME", "");
+        env.put("TURN_CREDENTIAL", "");
+        
+        RelayServer newHandler = new RelayServer(env);
+        
+        // Set up the mocks
+        Field dynamoDbClientField = RelayServer.class.getDeclaredField("dynamoDbClient");
+        dynamoDbClientField.setAccessible(true);
+        dynamoDbClientField.set(newHandler, dynamoDbClient);
+        
+        Field sqsClientField = RelayServer.class.getDeclaredField("sqsClient");
+        sqsClientField.setAccessible(true);
+        sqsClientField.set(newHandler, sqsClient);
+
+        APIGatewayProxyRequestEvent request = createValidRequest();
+        APIGatewayProxyResponseEvent response = newHandler.handleRequest(request, context);
+
+        assertEquals(200, response.getStatusCode());
+        
+        // Verify the response contains the default Google STUN server
+        Map<String, Object> responseBody = objectMapper.readValue(response.getBody(), new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+        List<Map<String, String>> responseIceServers = objectMapper.convertValue(responseBody.get("iceServers"), 
+            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, String>>>() {});
+        
+        assertEquals(1, responseIceServers.size(), "Should have exactly one ICE server");
+        assertEquals("stun:stun.l.google.com:19302", responseIceServers.get(0).get("urls"), 
+            "Should default to Google STUN server");
+    }
+
     private Map<String, AttributeValue> createProofItem(String did, String proof) {
         Map<String, AttributeValue> item = new HashMap<>();
         item.put("did", AttributeValue.builder().s(did).build());
@@ -400,6 +746,37 @@ class RelayServerTest {
         headers.put("X-Subscription-Proof", proof);
         request.setHeaders(headers);
         
+        return request;
+    }
+
+    private APIGatewayProxyRequestEvent createValidRequest() throws Exception {
+        APIGatewayProxyRequestEvent request = new APIGatewayProxyRequestEvent();
+        Map<String, String> headers = new HashMap<>();
+        headers.put("X-DID", "test-did");
+        headers.put("X-Subscription-Proof", "valid-proof");
+        request.setHeaders(headers);
+        request.setBody("{\"type\":\"offer\",\"peerId\":\"peer-123\",\"sdp\":\"v=0\\r\\no=- 1234567890 2 IN IP4 127.0.0.1\\r\\ns=-\\r\\nt=0 0\\r\\na=group:BUNDLE audio video\\r\\n\"}");
+
+        // Mock subscription proof lookup
+        Map<String, AttributeValue> proofItem = new HashMap<>();
+        proofItem.put("did", AttributeValue.builder().s("test-did").build());
+        proofItem.put("proof", AttributeValue.builder().s("valid-proof").build());
+        proofItem.put("expiresAt", AttributeValue.builder().s(String.valueOf(System.currentTimeMillis() + 3600000)).build());
+
+        // Mock peer connection lookup
+        Map<String, AttributeValue> peerItem = new HashMap<>();
+        peerItem.put("peerId", AttributeValue.builder().s("peer-123").build());
+        peerItem.put("endpoint", AttributeValue.builder().s("wss://example.com").build());
+        peerItem.put("connectionId", AttributeValue.builder().s("conn-123").build());
+        peerItem.put("status", AttributeValue.builder().s("connected").build());
+        peerItem.put("connectedAt", AttributeValue.builder().s(String.valueOf(System.currentTimeMillis())).build());
+
+        when(dynamoDbClient.getItem(any(GetItemRequest.class)))
+            .thenReturn(
+                GetItemResponse.builder().item(proofItem).build(),
+                GetItemResponse.builder().item(peerItem).build()
+            );
+
         return request;
     }
 } 
