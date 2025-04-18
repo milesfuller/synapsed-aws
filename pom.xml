@@ -27,7 +27,31 @@
         <aws.lambda.java.events.version>3.11.4</aws.lambda.java.events.version>
     </properties>
 
+    <repositories>
+        <repository>
+            <id>central</id>
+            <name>Maven Central Repository</name>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
+        <repository>
+            <id>jitpack.io</id>
+            <url>https://jitpack.io</url>
+        </repository>
+    </repositories>
+
     <dependencies>
+        <!-- Humainary Dependencies -->
+        <dependency>
+            <groupId>com.github.humainary-io</groupId>
+            <artifactId>substrates-api-java</artifactId>
+            <version>-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.humainary-io</groupId>
+            <artifactId>serventis-api-java</artifactId>
+            <version>-SNAPSHOT</version>
+        </dependency>
+
         <!-- AWS CDK Dependencies -->
         <dependency>
             <groupId>software.amazon.awscdk</groupId>
@@ -263,12 +287,4 @@
             </plugin>
         </plugins>
     </build>
-
-    <repositories>
-        <repository>
-            <id>central</id>
-            <name>Maven Central Repository</name>
-            <url>https://repo.maven.apache.org/maven2</url>
-        </repository>
-    </repositories>
 </project> 

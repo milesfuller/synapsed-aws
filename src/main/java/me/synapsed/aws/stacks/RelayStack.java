@@ -106,6 +106,38 @@ public class RelayStack extends Stack {
             "Allow TURN traffic"
         );
 
+        // Allow additional WebRTC ports for NAT traversal
+        // Instead of a range, we'll add rules for common WebRTC ports
+        relaySecurityGroup.addIngressRule(
+            Peer.anyIpv4(),
+            Port.udp(49152),
+            "Allow WebRTC dynamic port 49152"
+        );
+        
+        relaySecurityGroup.addIngressRule(
+            Peer.anyIpv4(),
+            Port.udp(49153),
+            "Allow WebRTC dynamic port 49153"
+        );
+        
+        relaySecurityGroup.addIngressRule(
+            Peer.anyIpv4(),
+            Port.udp(49154),
+            "Allow WebRTC dynamic port 49154"
+        );
+        
+        relaySecurityGroup.addIngressRule(
+            Peer.anyIpv4(),
+            Port.udp(49155),
+            "Allow WebRTC dynamic port 49155"
+        );
+        
+        relaySecurityGroup.addIngressRule(
+            Peer.anyIpv4(),
+            Port.udp(49156),
+            "Allow WebRTC dynamic port 49156"
+        );
+
         // Create a log group for the relay servers
         this.relayLogGroup = new LogGroup(this, "RelayLogGroup",
             LogGroupProps.builder()
@@ -163,7 +195,11 @@ public class RelayStack extends Stack {
                 .securityGroups(Arrays.asList(relaySecurityGroup))
                 .environment(Map.of(
                     "SUBSCRIPTION_PROOFS_TABLE", "synapsed-subscription-proofs",
-                    "PEER_CONNECTIONS_TABLE", peerConnectionsTable.getTableName()
+                    "PEER_CONNECTIONS_TABLE", peerConnectionsTable.getTableName(),
+                    "STUN_SERVER", "stun:stun.l.google.com:19302",
+                    "TURN_SERVER", "turn:your-turn-server.com:3478",
+                    "TURN_USERNAME", "your-turn-username",
+                    "TURN_CREDENTIAL", "your-turn-credential"
                 ))
                 .build());
 

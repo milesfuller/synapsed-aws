@@ -18,9 +18,20 @@ This document tracks the improvements needed for the Synapse-D AWS infrastructur
 - [x] Add peer connection status checks before forwarding messages
 - [x] Add message retry mechanism for failed deliveries
 - [x] Add connection cleanup for disconnected peers
-- [ ] Add STUN/TURN server support
-- [ ] Add NAT traversal capabilities
+- [x] Add STUN/TURN server support
+  - [x] Support for multiple STUN servers
+  - [x] Support for multiple TURN servers
+  - [x] URL validation for ICE servers
+  - [x] Default STUN server fallback
+  - [x] Error handling for invalid configurations
+- [x] Add NAT traversal capabilities
+  - [x] ICE server configuration
+  - [x] Multiple server support
+  - [x] Fallback mechanisms
 - [ ] Add direct connection fallback handling
+  - [ ] Automatic fallback to relay
+  - [ ] Connection state monitoring
+  - [ ] Retry logic for failed direct connections
 
 ## 3. P2P Connection Improvements
 - [ ] Direct Connection Support

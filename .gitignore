@@ -45,3 +45,6 @@ test-output/
 reports/
 coverage/ 
 synapsed-aws.code-workspace
+
+# External dependencies
+external/

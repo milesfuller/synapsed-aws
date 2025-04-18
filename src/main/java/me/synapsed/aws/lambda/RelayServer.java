@@ -1,7 +1,9 @@
 package me.synapsed.aws.lambda;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -29,6 +31,7 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
     private final String peerConnectionsTable;
     private final String signalingQueueUrl;
     private final SqsClient sqsClient;
+    private final List<Map<String, String>> iceServers;
     
     // Valid WebRTC signaling message types
     private static final Set<String> VALID_SIGNALING_TYPES = new HashSet<>();
@@ -55,12 +58,65 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
     }
 
     public RelayServer() {
+        this(System.getenv());
+    }
+    
+    public RelayServer(Map<String, String> env) {
         this.dynamoDbClient = DynamoDbClient.builder().build();
         this.objectMapper = new ObjectMapper();
-        this.subscriptionProofsTable = System.getenv("SUBSCRIPTION_PROOFS_TABLE");
-        this.peerConnectionsTable = System.getenv("PEER_CONNECTIONS_TABLE");
-        this.signalingQueueUrl = System.getenv("SIGNALING_QUEUE_URL");
+        this.subscriptionProofsTable = env.getOrDefault("SUBSCRIPTION_PROOFS_TABLE", "synapsed-subscription-proofs");
+        this.peerConnectionsTable = env.getOrDefault("PEER_CONNECTIONS_TABLE", "synapsed-peer-connections");
+        this.signalingQueueUrl = env.getOrDefault("SIGNALING_QUEUE_URL", "");
         this.sqsClient = SqsClient.builder().build();
+        
+        // Initialize ICE servers
+        this.iceServers = new ArrayList<>();
+        
+        // Add STUN servers
+        String stunServers = env.getOrDefault("STUN_SERVER", "stun:stun.l.google.com:19302");
+        if (!stunServers.isEmpty()) {
+            for (String stunUrl : stunServers.split(",")) {
+                stunUrl = stunUrl.trim();
+                if (isValidStunUrl(stunUrl)) {
+                    Map<String, String> stunServer = new HashMap<>();
+                    stunServer.put("urls", stunUrl);
+                    this.iceServers.add(stunServer);
+                }
+            }
+        }
+        
+        // If no valid STUN servers were added, add the default Google STUN server
+        if (this.iceServers.isEmpty()) {
+            Map<String, String> defaultStunServer = new HashMap<>();
+            defaultStunServer.put("urls", "stun:stun.l.google.com:19302");
+            this.iceServers.add(defaultStunServer);
+        }
+        
+        // Add TURN servers if configured
+        String turnServers = env.getOrDefault("TURN_SERVER", "");
+        String turnUsername = env.getOrDefault("TURN_USERNAME", "");
+        String turnCredential = env.getOrDefault("TURN_CREDENTIAL", "");
+        
+        if (!turnServers.isEmpty() && !turnUsername.isEmpty() && !turnCredential.isEmpty()) {
+            for (String turnUrl : turnServers.split(",")) {
+                turnUrl = turnUrl.trim();
+                if (isValidTurnUrl(turnUrl)) {
+                    Map<String, String> turn = new HashMap<>();
+                    turn.put("urls", turnUrl);
+                    turn.put("username", turnUsername);
+                    turn.put("credential", turnCredential);
+                    this.iceServers.add(turn);
+                }
+            }
+        }
+    }
+
+    private boolean isValidStunUrl(String url) {
+        return url != null && url.startsWith("stun:") && url.contains(":");
+    }
+
+    private boolean isValidTurnUrl(String url) {
+        return url != null && url.startsWith("turn:") && url.contains(":");
     }
 
     @Override
@@ -107,6 +163,11 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
                 return new APIGatewayProxyResponseEvent()
                     .withStatusCode(400)
                     .withBody(validationError);
+            }
+
+            // Add ICE servers to the response for offer/answer
+            if (type.equals("offer") || type.equals("answer")) {
+                requestBody.put("iceServers", this.iceServers);
             }
 
             switch (type) {
@@ -249,6 +310,11 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
             signalingMessage.put("targetConnectionId", peerConnectionId);
             signalingMessage.put("targetEndpoint", peerEndpoint);
 
+            // Add direct connection attempt flag for offer messages
+            if (type.equals("offer")) {
+                signalingMessage.put("attemptDirectConnection", true);
+            }
+
             // Convert the message to JSON
             String messageBody = objectMapper.writeValueAsString(signalingMessage);
 
@@ -264,6 +330,17 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
                 // Log the signaling event
                 String fromPeerId = data.containsKey("fromPeerId") ? (String) data.get("fromPeerId") : "unknown";
                 context.getLogger().log("Forwarding " + type + " from " + fromPeerId + " to " + peerId + " (MessageId: " + sendMessageResponse.messageId() + ")");
+
+                // For offer messages, include direct connection information in the response
+                if (type.equals("offer")) {
+                    Map<String, Object> responseBody = new HashMap<>();
+                    responseBody.put("message", "Signaling message forwarded");
+                    responseBody.put("attemptDirectConnection", true);
+                    responseBody.put("iceServers", this.iceServers);
+                    return new APIGatewayProxyResponseEvent()
+                        .withStatusCode(200)
+                        .withBody(objectMapper.writeValueAsString(responseBody));
+                }
 
                 return new APIGatewayProxyResponseEvent()
                     .withStatusCode(200)
