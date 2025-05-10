@@ -45,8 +45,11 @@ public class WebAppStack extends Stack {
                       final SecurityStack securityStack, final LoggingStack loggingStack) {
         super(scope, id, props);
 
-        // Add webapp-specific tags
+        // Add webapp-specific and cost allocation tags
         Tags.of(this).add("WebApp", "Enabled");
+        Tags.of(this).add("CostCenter", "P2PPlatform");
+        Tags.of(this).add("Owner", "PlatformTeam");
+        Tags.of(this).add("Environment", System.getenv().getOrDefault("ENVIRONMENT", "dev"));
         Tags.of(this).add("StaticHosting", "True");
         Tags.of(this).add("CDN", "Enabled");
 

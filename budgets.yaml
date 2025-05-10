@@ -1,0 +1,50 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  AWS Budgets and Cost Anomaly Detection for Synapsed Platform
+
+Resources:
+  MonthlyCostBudget:
+    Type: "AWS::Budgets::Budget"
+    Properties:
+      Budget:
+        BudgetName: "MonthlyCostBudget"
+        BudgetLimit:
+          Amount: 1000
+          Unit: USD
+        TimeUnit: MONTHLY
+        BudgetType: COST
+        CostFilters: {}
+        CostTypes:
+          IncludeTax: true
+          IncludeSubscription: true
+          UseBlended: false
+        TimePeriod:
+          Start: "2024-01-01_00:00"
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: "your-team@example.com"
+
+  CostAnomalyMonitor:
+    Type: AWS::CE::AnomalyMonitor
+    Properties:
+      MonitorName: "SynapsedCostMonitor"
+      MonitorType: "DIMENSIONAL"
+      MonitorDimension: "SERVICE"
+
+  CostAnomalySubscription:
+    Type: AWS::CE::AnomalySubscription
+    Properties:
+      SubscriptionName: "SynapsedCostAnomalySubscription"
+      Threshold: 100
+      Frequency: DAILY
+      MonitorArnList:
+        - !Ref CostAnomalyMonitor
+      Subscribers:
+        - Type: EMAIL
+          Address: "your-team@example.com" 

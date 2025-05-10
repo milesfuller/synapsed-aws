@@ -47,8 +47,11 @@ public class ComplianceStack extends Stack {
                           final LoggingStack loggingStack, final SecurityMonitoringStack securityStack) {
         super(scope, id, props);
 
-        // Add compliance-specific tags
+        // Add compliance-specific and cost allocation tags
         Tags.of(this).add("ComplianceLevel", "High");
+        Tags.of(this).add("CostCenter", "P2PPlatform");
+        Tags.of(this).add("Owner", "PlatformTeam");
+        Tags.of(this).add("Environment", System.getenv().getOrDefault("ENVIRONMENT", "dev"));
         Tags.of(this).add("ComplianceFramework", "CIS,PCI-DSS,GDPR");
         Tags.of(this).add("DataRetention", "7Years");
 
@@ -176,5 +179,8 @@ public class ComplianceStack extends Stack {
                 complianceBucket.getBucketArn() + "/*"
             ))
             .build());
+
+        // Review: Compliance S3 bucket retention is set to 1 year. Ensure this aligns with privacy and regulatory requirements.
+        // NOTE: Use Athena or OpenSearch to analyze compliance/audit logs for privacy violations or anomalous access patterns.
     }
 } 

@@ -50,8 +50,11 @@ public class AuthenticationStack extends Stack {
                              final SecurityStack securityStack, final LoggingStack loggingStack) {
         super(scope, id, props);
 
-        // Add authentication-specific tags
+        // Add authentication-specific and cost allocation tags
         Tags.of(this).add("Authentication", "Enabled");
+        Tags.of(this).add("CostCenter", "P2PPlatform");
+        Tags.of(this).add("Owner", "PlatformTeam");
+        Tags.of(this).add("Environment", System.getenv().getOrDefault("ENVIRONMENT", "dev"));
         Tags.of(this).add("DID", "Enabled");
         Tags.of(this).add("API", "Enabled");
 

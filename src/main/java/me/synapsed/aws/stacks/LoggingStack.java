@@ -29,6 +29,7 @@ import software.amazon.awscdk.services.s3.LifecycleRule;
 import software.amazon.awscdk.services.s3.StorageClass;
 import software.amazon.awscdk.services.s3.Transition;
 import software.constructs.Construct;
+import software.amazon.awscdk.Tags;
 
 @Getter
 public class LoggingStack extends Stack {
@@ -168,5 +169,14 @@ public class LoggingStack extends Stack {
                     .build())
                 .build()
         );
+
+        // Add logging-specific and cost allocation tags
+        Tags.of(this).add("Logging", "Enabled");
+        Tags.of(this).add("CostCenter", "P2PPlatform");
+        Tags.of(this).add("Owner", "PlatformTeam");
+        Tags.of(this).add("Environment", System.getenv().getOrDefault("ENVIRONMENT", "dev"));
+
+        // Review: Log retention is set to 1 month (application, performance), 1 year (security), 2 years (audit). Consider reducing further for privacy if possible.
+        // NOTE: Use Athena or OpenSearch to analyze logs for privacy violations or anomalous access patterns.
     }
 } 

@@ -52,8 +52,11 @@ public class IncidentResponseStack extends Stack {
                                final ComplianceStack complianceStack) {
         super(scope, id, props);
 
-        // Add incident response-specific tags
+        // Add incident response-specific and cost allocation tags
         Tags.of(this).add("IncidentResponse", "Enabled");
+        Tags.of(this).add("CostCenter", "P2PPlatform");
+        Tags.of(this).add("Owner", "PlatformTeam");
+        Tags.of(this).add("Environment", System.getenv().getOrDefault("ENVIRONMENT", "dev"));
         Tags.of(this).add("AutomatedResponse", "True");
         Tags.of(this).add("RecoveryProcedures", "Automated");
 

@@ -68,8 +68,11 @@ public class AlertingStack extends Stack {
                         final IncidentResponseStack incidentStack, final ComplianceStack complianceStack) {
         super(scope, id, props);
 
-        // Add alerting-specific tags
+        // Add alerting-specific and cost allocation tags
         Tags.of(this).add("Alerting", "Enabled");
+        Tags.of(this).add("CostCenter", "P2PPlatform");
+        Tags.of(this).add("Owner", "PlatformTeam");
+        Tags.of(this).add("Environment", System.getenv().getOrDefault("ENVIRONMENT", "dev"));
         Tags.of(this).add("NotificationDelivery", "MultiChannel");
         Tags.of(this).add("EscalationManagement", "Automated");
 

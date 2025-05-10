@@ -47,8 +47,11 @@ public class SubscriptionStack extends Stack {
                            final SecurityStack securityStack, final LoggingStack loggingStack) {
         super(scope, id, props);
 
-        // Add subscription-specific tags
+        // Add subscription-specific and cost allocation tags
         Tags.of(this).add("Subscription", "Enabled");
+        Tags.of(this).add("CostCenter", "P2PPlatform");
+        Tags.of(this).add("Owner", "PlatformTeam");
+        Tags.of(this).add("Environment", System.getenv().getOrDefault("ENVIRONMENT", "dev"));
         Tags.of(this).add("Stripe", "Enabled");
         Tags.of(this).add("API", "Enabled");
 

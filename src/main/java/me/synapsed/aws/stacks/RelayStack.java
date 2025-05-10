@@ -20,6 +20,10 @@ import software.amazon.awscdk.services.dynamodb.Attribute;
 import software.amazon.awscdk.services.dynamodb.AttributeType;
 import software.amazon.awscdk.services.dynamodb.BillingMode;
 import software.amazon.awscdk.services.dynamodb.Table;
+import software.amazon.awscdk.services.ec2.FlowLog;
+import software.amazon.awscdk.services.ec2.FlowLogDestination;
+import software.amazon.awscdk.services.ec2.GatewayVpcEndpointAwsService;
+import software.amazon.awscdk.services.ec2.GatewayVpcEndpointOptions;
 import software.amazon.awscdk.services.ec2.Peer;
 import software.amazon.awscdk.services.ec2.Port;
 import software.amazon.awscdk.services.ec2.SecurityGroup;
@@ -31,6 +35,8 @@ import software.amazon.awscdk.services.iam.PolicyStatement;
 import software.amazon.awscdk.services.iam.Role;
 import software.amazon.awscdk.services.iam.RoleProps;
 import software.amazon.awscdk.services.iam.ServicePrincipal;
+import software.amazon.awscdk.services.kms.Key;
+import software.amazon.awscdk.services.kms.KeyProps;
 import software.amazon.awscdk.services.lambda.Alias;
 import software.amazon.awscdk.services.lambda.AutoScalingOptions;
 import software.amazon.awscdk.services.lambda.Function;
@@ -59,10 +65,19 @@ public class RelayStack extends Stack {
                      final SecurityStack securityStack, final LoggingStack loggingStack) {
         super(scope, id, props);
 
-        // Add relay-specific tags
+        // Add relay-specific and cost allocation tags
         Tags.of(this).add("Relay", "Enabled");
         Tags.of(this).add("P2P", "Enabled");
         Tags.of(this).add("WebRTC", "Enabled");
+        Tags.of(this).add("CostCenter", "P2PPlatform");
+        Tags.of(this).add("Owner", "PlatformTeam");
+        Tags.of(this).add("Environment", System.getenv().getOrDefault("ENVIRONMENT", "dev"));
+
+        // Create a KMS key for encryption (can be shared across resources)
+        Key relayKmsKey = new Key(this, "RelayKmsKey", KeyProps.builder()
+            .enableKeyRotation(true)
+            .description("KMS key for RelayStack resources")
+            .build());
 
         // Create a VPC for the relay servers
         Vpc vpc = new Vpc(this, "RelayVpc",
@@ -72,6 +87,14 @@ public class RelayStack extends Stack {
                 .enableDnsHostnames(true)
                 .enableDnsSupport(true)
                 .build());
+
+        // Add VPC endpoints for DynamoDB and S3
+        vpc.addGatewayEndpoint("DynamoDbEndpoint", GatewayVpcEndpointOptions.builder()
+            .service(GatewayVpcEndpointAwsService.DYNAMODB)
+            .build());
+        vpc.addGatewayEndpoint("S3Endpoint", GatewayVpcEndpointOptions.builder()
+            .service(GatewayVpcEndpointAwsService.S3)
+            .build());
 
         // Create security group for the relay function
         SecurityGroup relaySecurityGroup = SecurityGroup.Builder.create(this, "RelaySecurityGroup")
@@ -138,15 +161,16 @@ public class RelayStack extends Stack {
             "Allow WebRTC dynamic port 49156"
         );
 
-        // Create a log group for the relay servers
+        // Create a log group for the relay servers (encrypted)
         this.relayLogGroup = new LogGroup(this, "RelayLogGroup",
             LogGroupProps.builder()
                 .logGroupName("/synapsed/relay")
                 .retention(RetentionDays.ONE_MONTH)
                 .removalPolicy(software.amazon.awscdk.RemovalPolicy.DESTROY)
+                .encryptionKey(relayKmsKey)
                 .build());
 
-        // Create DynamoDB table for peer connections
+        // Create DynamoDB table for peer connections (encrypted)
         this.peerConnectionsTable = Table.Builder.create(this, "PeerConnectionsTable")
             .tableName("synapsed-peer-connections")
             .partitionKey(Attribute.builder()
@@ -155,6 +179,7 @@ public class RelayStack extends Stack {
                 .build())
             .billingMode(BillingMode.PAY_PER_REQUEST)
             .removalPolicy(software.amazon.awscdk.RemovalPolicy.DESTROY)
+            .encryptionKey(relayKmsKey)
             .build();
 
         // Create an IAM role for the relay function
@@ -164,21 +189,28 @@ public class RelayStack extends Stack {
                 .description("Role for relay function")
                 .build());
 
-        // Add permissions for the relay function
+        // Restrict IAM permissions to only the specific log group and DynamoDB table
         relayRole.addToPolicy(PolicyStatement.Builder.create()
             .effect(Effect.ALLOW)
             .actions(Arrays.asList(
                 "logs:CreateLogGroup",
                 "logs:CreateLogStream",
-                "logs:PutLogEvents",
+                "logs:PutLogEvents"
+            ))
+            .resources(Arrays.asList(
+                relayLogGroup.getLogGroupArn()
+            ))
+            .build());
+        relayRole.addToPolicy(PolicyStatement.Builder.create()
+            .effect(Effect.ALLOW)
+            .actions(Arrays.asList(
                 "dynamodb:GetItem",
                 "dynamodb:PutItem",
                 "dynamodb:DeleteItem",
                 "dynamodb:UpdateItem"
             ))
             .resources(Arrays.asList(
-                peerConnectionsTable.getTableArn(),
-                "arn:aws:logs:*:*:*"
+                peerConnectionsTable.getTableArn()
             ))
             .build());
 
@@ -198,8 +230,8 @@ public class RelayStack extends Stack {
                     "PEER_CONNECTIONS_TABLE", peerConnectionsTable.getTableName(),
                     "STUN_SERVER", "stun:stun.l.google.com:19302",
                     "TURN_SERVER", "turn:your-turn-server.com:3478",
-                    "TURN_USERNAME", "your-turn-username",
-                    "TURN_CREDENTIAL", "your-turn-credential"
+                    "TURN_USERNAME", "your-turn-username", // Replace with SSM/SecretsManager reference
+                    "TURN_CREDENTIAL", "your-turn-credential" // Replace with SSM/SecretsManager reference
                 ))
                 .build());
 
@@ -287,5 +319,15 @@ public class RelayStack extends Stack {
                         software.amazon.awscdk.services.backup.BackupResource.fromArn(relayFunction.getFunctionArn())
                     ))
                     .build());
+
+        // Enable VPC Flow Logs for auditability and privacy monitoring
+        FlowLog.Builder.create(this, "RelayVpcFlowLog")
+            .resourceType(software.amazon.awscdk.services.ec2.FlowLogResourceType.fromVpc(vpc))
+            .destination(FlowLogDestination.toS3(loggingStack.getLogBucket()))
+            .build();
+        // NOTE: Use Athena or OpenSearch to analyze VPC Flow Logs for privacy violations or anomalous access patterns.
+
+        // NOTE: For AWS Budgets and Cost Anomaly Detection, create a separate stack or script at the account level.
+        // These services are not typically provisioned per-stack in CDK, but can be managed via CloudFormation or the AWS Console.
     }
 } 

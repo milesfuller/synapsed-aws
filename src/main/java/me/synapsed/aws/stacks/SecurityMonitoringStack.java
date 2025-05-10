@@ -44,8 +44,11 @@ public class SecurityMonitoringStack extends Stack {
     public SecurityMonitoringStack(final Construct scope, final String id, final StackProps props, final LoggingStack loggingStack) {
         super(scope, id, props);
 
-        // Add security-specific tags
+        // Add security-specific and cost allocation tags
         Tags.of(this).add("SecurityLevel", "High");
+        Tags.of(this).add("CostCenter", "P2PPlatform");
+        Tags.of(this).add("Owner", "PlatformTeam");
+        Tags.of(this).add("Environment", System.getenv().getOrDefault("ENVIRONMENT", "dev"));
         Tags.of(this).add("ComplianceFramework", "CIS,PCI-DSS");
         Tags.of(this).add("DataClassification", "Sensitive");
 
