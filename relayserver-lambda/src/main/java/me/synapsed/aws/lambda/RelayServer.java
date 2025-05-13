@@ -206,16 +206,115 @@ public class RelayServer implements RequestHandler<APIGatewayProxyRequestEvent, 
     }
     private APIGatewayProxyResponseEvent handleSignaling(String type, String peerId, Map<String, Object> data, Context context) {
         try {
-            // Simulate forwarding signaling message to peer via SQS (not implemented in LocalStack test)
-            // In production, you would send to SQS or another messaging system
-            return new APIGatewayProxyResponseEvent()
-                .withStatusCode(200)
-                .withBody("Signaling message processed: " + type);
+            // Look up the peer's connection information in DynamoDB
+            Map<String, AttributeValue> key = new HashMap<>();
+            key.put("peerId", AttributeValue.builder().s(peerId).build());
+
+            GetItemRequest request = GetItemRequest.builder()
+                .tableName(peerConnectionsTable)
+                .key(key)
+                .build();
+
+            GetItemResponse response = dynamoDbClient.getItem(request);
+            if (!response.hasItem()) {
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(404)
+                    .withBody("Peer not found or not connected");
+            }
+
+            // Get the peer's connection information
+            Map<String, AttributeValue> peerInfo = response.item();
+            
+            // Check if the peer is connected
+            String status = peerInfo.get("status").s();
+            if (!"connected".equals(status)) {
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(400)
+                    .withBody("Peer is not connected. Current status: " + status);
+            }
+            
+            // Check if the connection has timed out
+            String connectedAt = peerInfo.get("connectedAt").s();
+            long connectionTime = Long.parseLong(connectedAt);
+            long currentTime = System.currentTimeMillis();
+            long connectionTimeout = 30 * 60 * 1000; // 30 minutes in milliseconds
+            
+            if (currentTime - connectionTime > connectionTimeout) {
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(400)
+                    .withBody("Peer connection has timed out");
+            }
+            
+            String peerConnectionId = peerInfo.get("connectionId").s();
+            String peerEndpoint = peerInfo.get("endpoint").s();
+
+            // Prepare the signaling message to forward
+            Map<String, Object> signalingMessage = new HashMap<>(data);
+            // Only add fromPeerId if it exists in the data
+            if (data.containsKey("fromPeerId")) {
+                signalingMessage.put("fromPeerId", data.get("fromPeerId"));
+            }
+            signalingMessage.put("timestamp", System.currentTimeMillis());
+            signalingMessage.put("targetPeerId", peerId);
+            signalingMessage.put("targetConnectionId", peerConnectionId);
+            signalingMessage.put("targetEndpoint", peerEndpoint);
+
+            // Add direct connection attempt flag for offer messages
+            if (type.equals("offer")) {
+                signalingMessage.put("attemptDirectConnection", true);
+            }
+
+            // Convert the message to JSON
+            String messageBody = objectMapper.writeValueAsString(signalingMessage);
+
+            // Send the message to the SQS queue
+            SendMessageRequest sendMessageRequest = SendMessageRequest.builder()
+                .queueUrl(signalingQueueUrl)
+                .messageBody(messageBody)
+                .build();
+
+            try {
+                SendMessageResponse sendMessageResponse = sqsClient.sendMessage(sendMessageRequest);
+                
+                // Log the signaling event
+                String fromPeerId = data.containsKey("fromPeerId") ? (String) data.get("fromPeerId") : "unknown";
+                context.getLogger().log("Forwarding " + type + " from " + fromPeerId + " to " + peerId + " (MessageId: " + sendMessageResponse.messageId() + ")");
+
+                // For offer messages, include direct connection information in the response
+                if (type.equals("offer")) {
+                    Map<String, Object> responseBody = new HashMap<>();
+                    responseBody.put("message", "Signaling message forwarded");
+                    responseBody.put("attemptDirectConnection", true);
+                    responseBody.put("iceServers", this.iceServers);
+                    return new APIGatewayProxyResponseEvent()
+                        .withStatusCode(200)
+                        .withBody(objectMapper.writeValueAsString(responseBody));
+                }
+
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(200)
+                    .withBody("Signaling message forwarded");
+            } catch (QueueDoesNotExistException e) {
+                context.getLogger().log("Error: SQS queue does not exist: " + e.getMessage());
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(500)
+                    .withBody("Internal server error: Signaling queue not found");
+            } catch (InvalidMessageContentsException e) {
+                context.getLogger().log("Error: Invalid message contents: " + e.getMessage());
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(400)
+                    .withBody("Invalid message format");
+            } catch (SqsException e) {
+                context.getLogger().log("Error sending message to SQS: " + e.getMessage());
+                return new APIGatewayProxyResponseEvent()
+                    .withStatusCode(500)
+                    .withBody("Error forwarding signaling message: " + e.getMessage());
+            }
         } catch (Exception e) {
-            context.getLogger().log("Error forwarding signaling message: " + e.getMessage());
+            context.getLogger().log("Error handling signaling: " + e.getMessage());
             return new APIGatewayProxyResponseEvent()
                 .withStatusCode(500)
-                .withBody("Error forwarding signaling message");
+                .withBody("Error forwarding signaling message: " + e.getMessage());
         }
     }
 } 

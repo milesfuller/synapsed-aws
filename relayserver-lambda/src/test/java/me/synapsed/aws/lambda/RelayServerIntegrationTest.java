@@ -1,34 +1,59 @@
 package me.synapsed.aws.lambda;
 
-import org.junit.jupiter.api.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.localstack.LocalStackContainer;
-import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
-import software.amazon.awssdk.services.dynamodb.model.*;
-import software.amazon.awssdk.services.sqs.SqsClient;
-import software.amazon.awssdk.services.sqs.model.*;
-import software.amazon.awssdk.services.lambda.LambdaClient;
-import software.amazon.awssdk.services.lambda.model.*;
-import software.amazon.awssdk.services.iam.IamClient;
-import software.amazon.awssdk.services.iam.model.*;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import org.testcontainers.utility.DockerImageName;
 
-import java.util.*;
-
-import static org.junit.jupiter.api.Assertions.*;
-import software.amazon.awssdk.services.apigateway.ApiGatewayClient;
-import software.amazon.awssdk.services.apigateway.model.*;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.services.apigateway.ApiGatewayClient;
+import software.amazon.awssdk.services.apigateway.model.CreateDeploymentRequest;
+import software.amazon.awssdk.services.apigateway.model.CreateResourceRequest;
+import software.amazon.awssdk.services.apigateway.model.CreateResourceResponse;
+import software.amazon.awssdk.services.apigateway.model.CreateRestApiRequest;
+import software.amazon.awssdk.services.apigateway.model.CreateRestApiResponse;
+import software.amazon.awssdk.services.apigateway.model.GetResourcesRequest;
+import software.amazon.awssdk.services.apigateway.model.GetResourcesResponse;
+import software.amazon.awssdk.services.apigateway.model.IntegrationType;
+import software.amazon.awssdk.services.apigateway.model.PutIntegrationRequest;
+import software.amazon.awssdk.services.apigateway.model.PutMethodRequest;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeDefinition;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.CreateTableRequest;
+import software.amazon.awssdk.services.dynamodb.model.KeySchemaElement;
+import software.amazon.awssdk.services.dynamodb.model.KeyType;
+import software.amazon.awssdk.services.dynamodb.model.ProvisionedThroughput;
+import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
+import software.amazon.awssdk.services.iam.IamClient;
+import software.amazon.awssdk.services.iam.model.CreateRoleRequest;
+import software.amazon.awssdk.services.iam.model.CreateRoleResponse;
+import software.amazon.awssdk.services.lambda.LambdaClient;
+import software.amazon.awssdk.services.lambda.model.CreateFunctionRequest;
+import software.amazon.awssdk.services.lambda.model.FunctionCode;
+import software.amazon.awssdk.services.lambda.model.ResourceConflictException;
+import software.amazon.awssdk.services.lambda.model.UpdateFunctionCodeRequest;
+import software.amazon.awssdk.services.sqs.SqsClient;
+import software.amazon.awssdk.services.sqs.model.CreateQueueRequest;
 
 @Testcontainers
 public class RelayServerIntegrationTest {
-    @Container
+    @SuppressWarnings("resource") @Container
     public static LocalStackContainer localstack = new LocalStackContainer(DockerImageName.parse("localstack/localstack:3.3.0"))
             .withServices(LocalStackContainer.Service.DYNAMODB, LocalStackContainer.Service.SQS);
 
@@ -62,6 +87,25 @@ public class RelayServerIntegrationTest {
                         AttributeDefinition.builder().attributeName("did").attributeType(ScalarAttributeType.S).build(),
                         AttributeDefinition.builder().attributeName("proof").attributeType(ScalarAttributeType.S).build())
                 .provisionedThroughput(ProvisionedThroughput.builder().readCapacityUnits(1L).writeCapacityUnits(1L).build())
+                .build());
+        // Create DynamoDB table for peer connections
+        dynamoDbClient.createTable(CreateTableRequest.builder()
+                .tableName(peerConnectionsTable)
+                .keySchema(KeySchemaElement.builder().attributeName("peerId").keyType(KeyType.HASH).build())
+                .attributeDefinitions(AttributeDefinition.builder().attributeName("peerId").attributeType(ScalarAttributeType.S).build())
+                .provisionedThroughput(ProvisionedThroughput.builder().readCapacityUnits(1L).writeCapacityUnits(1L).build())
+                .build());
+        // Insert a valid peer connection for peer-1
+        long now = System.currentTimeMillis();
+        dynamoDbClient.putItem(PutItemRequest.builder()
+                .tableName(peerConnectionsTable)
+                .item(Map.of(
+                        "peerId", AttributeValue.builder().s("peer-1").build(),
+                        "status", AttributeValue.builder().s("connected").build(),
+                        "connectedAt", AttributeValue.builder().s(Long.toString(now)).build(),
+                        "connectionId", AttributeValue.builder().s("conn-1").build(),
+                        "endpoint", AttributeValue.builder().s("endpoint-1").build()
+                ))
                 .build());
         // Create SQS queue for signaling
         signalingQueueUrl = sqsClient.createQueue(CreateQueueRequest.builder().queueName("signaling-queue").build()).queueUrl();
@@ -106,7 +150,7 @@ public class RelayServerIntegrationTest {
         com.amazonaws.services.lambda.runtime.Context context = new TestLambdaContext();
         com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent response = handler.handleRequest(event, context);
         assertEquals(200, response.getStatusCode());
-        assertTrue(response.getBody().contains("Signaling message processed"));
+        assertTrue(response.getBody().contains("Signaling message forwarded"));
     }
 
     @Test
